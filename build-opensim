@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# (before) checkout this project
+# git clone https://github.com/opensim-org/opensim-core.git
+# cd opensim-core/
+
+# (before) install package-managed dependencies
+#apt-get install git cmake cmake-curses-gui \
+#                freeglut3-dev libxi-dev libxmu-dev \
+#                liblapack-dev swig python-dev default-jdk
+
+# CMAKE_BUILD_TYPE: what type of build to run
+#   Debug           Unoptimized (10x slower) build with debug symbols
+#   Release         Optimized without debug symbols
+#   RelWithDebInfo  Optimized build with debug symbols (default)
+#   MinSizeRel      Optimized **for size** build without debug symbols
+
+opensim_project="${PWD}"
+
+# where build intermediates are placed
+opensim_build_dir="${opensim_project}/opensim-core-build"
+
+# where built binaries are placed
+opensim_install_dir="${opensim_project}/opensim-core-install" 
+
+# same, but for vendored dependencies
+dependencies_project="${opensim_project}/dependencies"
+dependencies_build_dir="${opensim_project}/opensim-core-dependencies-build"
+dependencies_install_dir="${opensim_project}/opensim-dependencies-install"
+
+# number of build targets to build in parallel
+num_build_jobs=$(nproc)
+
+
+# build vendored dependencies that OpenSim uses
+mkdir -p "${dependencies_build_dir}"
+pushd "${dependencies_build_dir}"
+cmake -DCMAKE_INSTALL_PREFIX="${dependencies_install_dir}" \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      "${dependencies_project}"
+make -j"${num_build_jobs}"
+popd
+
+# build OpenSim
+mkdir -p "${opensim_build_dir}"
+pushd "${opensim_build_dir}"
+cmake -DCMAKE_INSTALL_PREFIX="${opensim_install_dir}" \
+      -DOPENSIM_DEPENDENCIES_DIR="${dependencies_install_dir}" \
+      -DBUILD_JAVA_WRAPPING=OFF \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      "${opensim_project}"
+
+make -j "${num_build_jobs}"
+ctest -j "${num_build_jobs}"
+make -j "${num_build_jobs}" install
+popd
