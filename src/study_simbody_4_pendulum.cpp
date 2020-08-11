@@ -56,7 +56,6 @@ int main() {
 
   // set rotational velocity of the 2nd pendulum
   pendulum2.setRate(state, 50.0);
-
   
   // Simulate it.
   RungeKuttaMersonIntegrator integ(system);
