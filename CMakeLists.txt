@@ -36,6 +36,11 @@ target_include_directories(experiment_wrapping_surfs PUBLIC ${ALL_INCLUDES})
 target_link_directories(experiment_wrapping_surfs PUBLIC ${LIB_DIR})
 target_link_libraries(experiment_wrapping_surfs ${ALL_LIBS})
 
+add_executable(show_model src/show_model.cpp)
+target_include_directories(show_model PUBLIC ${ALL_INCLUDES})
+target_link_directories(show_model PUBLIC ${LIB_DIR})
+target_link_libraries(show_model ${ALL_LIBS})
+
 find_package(OpenGL REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_ttf REQUIRED)
@@ -43,7 +48,7 @@ find_package(GLEW REQUIRED)
 find_package(GLUT REQUIRED)
 find_package(glm REQUIRED)
 
-add_executable(opensim_show src/opensim_show.cpp src/stb_image.h)
+add_executable(opensim_show src/opensim_show.cpp src/stb_image.h src/opensim_wrapper.hpp src/opensim_wrapper.cpp)
 target_include_directories(opensim_show PUBLIC
     ${ALL_INCLUDES}
     ${OPENGL_INCLUDE_DIR}

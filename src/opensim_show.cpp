@@ -1,5 +1,6 @@
-﻿//#include <OpenSim/OpenSim.h>
-#include <SDL2/SDL.h>
+﻿#include <SDL2/SDL.h>
+#include "opensim_wrapper.hpp"
+
 #include <SDL_ttf.h>
 #include <GL/glew.h>
 #include <GL/glut.h>
@@ -19,194 +20,14 @@
 #include <algorithm>
 #include <iostream>
 
-//using namespace SimTK;
-//using namespace OpenSim;
+
 using std::string_literals::operator""s;
 
-/*
-namespace osim {
-    struct MutableModel : public Model {
-        MutableModel() : Model{} {}
-        void load_file(std::string const& s) {
-            XMLDocument* d = new XMLDocument(s);
-            setDocument(d);
-            const std::string saveWorkingDirectory = IO::getCwd();
-            const std::string directoryOfXMLFile = IO::getParentDirectory(s);
-            IO::chDir(directoryOfXMLFile);
-            try {
-                updateFromXMLDocument();
-            } catch (...) {
-                IO::chDir(saveWorkingDirectory);
-                throw; // re-issue the exception
-            }
-            OPENSIM_THROW_IF(getDocument()->getDocumentVersion() < 10901,
-                OpenSim::Exception,
-                "Model file " + s+ " is using unsupported file format"
-                ". Please open model and save it in OpenSim version 3.3 to upgrade.");
 
-            log_info("Loaded model {} from file {}", getName(), getInputFileName());
-
-            try {
-                finalizeFromProperties();
-            }
-            catch(const InvalidPropertyValue& err) {
-                log_error("Model was unable to finalizeFromProperties."
-                          "Update the model file and reload OR update the property and "
-                          "call finalizeFromProperties() on the model."
-                          "(details: {}).",
-                        err.what());
-                IO::chDir(saveWorkingDirectory);
-            }
-            IO::chDir(saveWorkingDirectory);
-        }
-    };
-
-    void generateGeometry(Model& model, State const& state, Array_<DecorativeGeometry>& geometry) {
-        model.generateDecorations(true, model.getDisplayHints(), state, geometry);
-        ComponentList<const Component> allComps = model.getComponentList();
-        ComponentList<Component>::const_iterator iter = allComps.begin();
-        while (iter != allComps.end()){
-            //std::string cn = iter->getConcreteClassName();
-            //std::cout << cn << ":" << iter->getName() << std::endl;
-            iter->generateDecorations(true, model.getDisplayHints(), state, geometry);
-            iter++;
-        }
-
-
-        DefaultGeometry dg{model};
-        dg.generateDecorations(state, geometry);
-    }
-
-
-    // A hacky decoration generator that just always generates all geometry,
-    // even if it's static.
-    struct DynamicDecorationGenerator : public DecorationGenerator {
-        Model* _model;
-        DynamicDecorationGenerator(Model* model) : _model{model} {
-            assert(_model != nullptr);
-        }
-        void useModel(Model* newModel) {
-            assert(newModel != nullptr);
-            _model = newModel;
-        }
-
-        void generateDecorations(const State& state, Array_<DecorativeGeometry>& geometry) override {
-            generateGeometry(*_model, state, geometry);
-        }
-    };
-
-    std::string to_string(Transform const& t) {
-        std::stringstream ss;
-        ss << "rotation = " << t.R()[0] << t.R()[1] << t.R()[2];
-        ss << " translation = " << t.T()[0] << "x " << t.T()[1] << "y " << t.T()[2] << "z";
-        return ss.str();
-    }
-
-    struct GeomVisitor : public DecorativeGeometryImplementation {
-        Model& model;
-        State& state;
-
-        GeomVisitor(Model& _model, State& _state) : model{_model}, state{_state} {
-        }
-
-        Transform ground_to_decoration_xform(DecorativeGeometry const& geom) {
-            SimbodyMatterSubsystem const& ms = model.getSystem().getMatterSubsystem();
-            MobilizedBody const& mobod = ms.getMobilizedBody(MobilizedBodyIndex(geom.getBodyId()));
-            Transform const& ground_to_body_xform = mobod.getBodyTransform(state);
-            Transform const& body_to_decoration_xform = geom.getTransform();
-
-            return ground_to_body_xform * body_to_decoration_xform;
-        }
-
-        void implementPointGeometry(const DecorativePoint& geom) override {
-            std::cerr << "point: " << geom.getPoint() << std::endl;
-        }
-        void implementLineGeometry(const DecorativeLine& geom) override {
-            std::cerr << "line:" << std::endl
-                      << "    p1 = " << geom.getPoint1() << std::endl
-                      << "    p2 = " << geom.getPoint2() << std::endl;
-        }
-        void implementBrickGeometry(const DecorativeBrick& geom) override {
-            std::cerr << "brick" << std::endl;
-        }
-        void implementCylinderGeometry(const DecorativeCylinder& geom) override {
-            std::cerr << "cylinder:" << std::endl
-                      << "    radius = " << geom.getRadius() << std::endl
-                      << "    xform = " << to_string(ground_to_decoration_xform(geom)) << std::endl;
-        }
-        void implementCircleGeometry(const DecorativeCircle& geom) override {
-            std::cerr << "circle"  << std::endl;
-        }
-        void implementSphereGeometry(const DecorativeSphere& geom) override {
-            Transform xform = ground_to_decoration_xform(geom);
-            std::cerr << "sphere:"  << std::endl
-                      << "    radius = " << geom.getRadius() << std::endl
-                      << "    xform = " << to_string(xform) << std::endl;
-        }
-        void implementEllipsoidGeometry(const DecorativeEllipsoid& geom) override {
-            std::cerr << "ellipsoid:" << std::endl
-                      << "    radii = " << geom.getRadii() << std::endl;
-        }
-        void implementFrameGeometry(const DecorativeFrame& geom) override {
-            std::cerr << "frame"  << std::endl;
-        }
-        void implementTextGeometry(const DecorativeText& geom) override {
-            std::cerr << "text"  << std::endl;
-        }
-        void implementMeshGeometry(const DecorativeMesh& geom) override {
-            std::cerr << "mesh" << std::endl;
-        }
-        void implementMeshFileGeometry(const DecorativeMeshFile& geom) override {
-            std::cerr << "meshfile:" << std::endl
-                      << "    filename = " << geom.getMeshFile() << std::endl;
-        }
-        void implementArrowGeometry(const DecorativeArrow& geom) override {
-            std::cerr << "arrow" << std::endl;
-        }
-        void implementTorusGeometry(const DecorativeTorus& geom) override {
-            std::cerr << "torus" << std::endl;
-        }
-        void implementConeGeometry(const DecorativeCone& geom) override {
-            std::cerr << "cone" << std::endl;
-        }
-    };
-
-    void show_osim_file(std::string const& path) {
-        Model model{path};
-        model.finalizeFromProperties();
-        model.finalizeConnections();
-
-        // Configure the model.
-
-        model.buildSystem();
-        State& state = model.initSystem();
-        model.initializeState();
-        model.updMatterSubsystem().setShowDefaultGeometry(false);
-        SimTK::Visualizer viz{model.getMultibodySystem()};
-        viz.setShutdownWhenDestructed(true);
-        viz.setCameraClippingPlanes(.01,100.);
-        viz.setWindowTitle("lol");
-
-        DynamicDecorationGenerator dg{&model};
-        viz.addDecorationGenerator(&dg);
-
-        Array_<DecorativeGeometry> tmp;
-        dg.generateDecorations(state, tmp);
-        GeomVisitor v{model, state};
-        for (DecorativeGeometry& dg : tmp) {
-            dg.implementGeometry(v);
-        }
-
-        viz.setBackgroundType(viz.SolidColor);
-        viz.setBackgroundColor(White);
-        viz.drawFrameNow(state);
-
-
-        using std::chrono_literals::operator""s;
-        std::this_thread::sleep_for(5s);
-    }
-}
-*/
+// helper type for the visitor #4
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+// explicit deduction guide (not needed as of C++20)
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 namespace sdl {
     class Surface final {
@@ -432,26 +253,6 @@ namespace sdl::ttf {
     }
 }
 
-namespace {
-    std::optional<std::string> get_shader_compile_errors(GLuint shader) {
-        GLint params = GL_FALSE;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &params);
-        if (params == GL_FALSE) {
-            GLint log_len = 0;
-            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_len);
-
-            std::vector<GLchar> errmsg(log_len);
-            glGetShaderInfoLog(shader, log_len, &log_len, errmsg.data());
-
-            std::stringstream ss;
-            ss << "glCompileShader() failed: ";
-            ss << errmsg.data();
-            return std::optional<std::string>{ss.str()};
-        }
-        return std::nullopt;  // no errors
-    }
-}
-
 namespace gl {
     std::string to_string(GLubyte const* err_string) {
         return std::string{reinterpret_cast<char const*>(err_string)};
@@ -493,6 +294,24 @@ namespace gl {
 
     void UseProgram() {
         glUseProgram(static_cast<GLuint>(0));
+    }
+
+    static std::optional<std::string> get_shader_compile_errors(GLuint shader) {
+        GLint params = GL_FALSE;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &params);
+        if (params == GL_FALSE) {
+            GLint log_len = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_len);
+
+            std::vector<GLchar> errmsg(log_len);
+            glGetShaderInfoLog(shader, log_len, &log_len, errmsg.data());
+
+            std::stringstream ss;
+            ss << "glCompileShader() failed: ";
+            ss << errmsg.data();
+            return std::optional<std::string>{ss.str()};
+        }
+        return std::nullopt;  // no errors
     }
 
     struct Shader {
@@ -614,6 +433,12 @@ namespace gl {
     void Uniform(UniformMatrix4fv& u, GLfloat const* value) {
         glUniformMatrix4fv(u, 1, false, value);
     }
+
+    struct UniformVec4f final : public Uniform {
+        UniformVec4f(Program& p, char const* name) :
+            Uniform{p, name} {
+        }
+    };
 
     class Attribute final {
         GLint handle;
@@ -776,6 +601,10 @@ namespace gl {
 namespace glglm {
     void Uniform(gl::UniformMatrix4fv& u, glm::mat4 const& mat) {
         gl::Uniform(u, glm::value_ptr(mat));
+    }
+
+    void Uniform(gl::UniformVec4f& u, glm::vec4 const& v) {
+        glUniform4f(u, v.x, v.y, v.z, v.w);
     }
 }
 
@@ -1049,8 +878,51 @@ namespace examples::fractal {
 }
 
 namespace glm {
-    std::ostream& operator<<(std::ostream& o, vec3 v) {
+    std::ostream& operator<<(std::ostream& o, vec3 const& v) {
         return o << "[" << v.x << ", " << v.y << ", " << v.z << "]";
+    }
+
+    std::ostream& operator<<(std::ostream& o, vec4 const& v) {
+        return o << "[" << v.x << ", " << v.y << ", " << v.z << ", " << v.w << "]";
+    }
+
+    std::ostream& operator<<(std::ostream& o, mat4 const& m) {
+        o << "[";
+        for (auto i = 0U; i < 3; ++i) {
+            o << m[i];
+            o << ", ";
+        }
+        o << m[3];
+        o << "]";
+        return o;
+    }
+}
+
+namespace  osim {
+    std::ostream& operator<<(std::ostream& o, osim::Cylinder const& c) {
+        o << "cylinder:"  << std::endl
+          << "    scale = " << c.scale << std::endl
+          << "    rgba = " << c.rgba << std::endl
+          << "    transform = " << c.transform << std::endl;
+        return o;
+    }
+    std::ostream& operator<<(std::ostream& o, osim::Line const& l) {
+        o << "line:" << std::endl
+          << "     p1 = " << l.p1 << std::endl
+          << "     p2 = " << l.p2 << std::endl
+          << "     rgba = " << l.rgba << std::endl;
+        return o;
+    }
+    std::ostream& operator<<(std::ostream& o, osim::Sphere const& s) {
+        o << "sphere:" << std::endl
+          << "    transform = " << s.transform << std::endl
+          << "    color = " << s.rgba << std::endl
+          << "    radius = " << s.radius << std::endl;
+        return o;
+    }
+    std::ostream& operator<<(std::ostream& o, osim::Geometry const& g) {
+        std::visit([&](auto concrete) { o << concrete; }, g);
+        return o;
     }
 }
 
@@ -1105,7 +977,6 @@ namespace examples::cube {
         gl::Vertex_array vao;
         GLsizei vao_num_triangles;
         gl::Array_buffer vertBuffer;
-        gl::Element_array_buffer indexBuffer;
     };
 
     GLState initialize() {
@@ -1130,7 +1001,6 @@ namespace examples::cube {
         auto in_uv = gl::Attribute{program, "in_uv"};
 
         auto vbo = gl::Array_buffer{};
-        auto ebo = gl::Element_array_buffer{};
 
         struct Vec2 { float x, y; };
         struct Vec3 { float x, y, z; };
@@ -1180,14 +1050,7 @@ namespace examples::cube {
                {{-0.5f,  0.5f, -0.5f},  {0.0f, 1.0f}},
         }};
 
-//        auto cubeIdxs = std::array<unsigned int, 36>{{
-//            0, 2, 1, 0, 3, 2, // Right
-//            4, 5, 6, 4, 6, 7, // Left
-//            0, 7, 3, 0, 4, 7, // Top
-//            1, 6, 2, 1, 5, 6, // Bottom
-//            0, 5, 1, 0, 4, 5, // Front
-//            3, 7, 6, 3, 6, 2  // Back
-//        }};
+        // don't use an EBO because it makes UV mapping a PITA
 
         // set attributes to read the cube verts correctly
         auto vao = gl::Vertex_array{};
@@ -1201,9 +1064,6 @@ namespace examples::cube {
 
             gl::VertexAttributePointer(in_uv, 2, GL_FLOAT, GL_FALSE, sizeof(Vert), (GLvoid*)sizeof(Vec3));
             gl::EnableVertexAttribArray(in_uv);
-
-            //gl::BindBuffer(ebo);
-            //gl::BufferData(ebo, sizeof(unsigned int) * cubeIdxs.size(), cubeIdxs.data(), GL_STATIC_DRAW);
         }
         gl::BindVertexArray();
 
@@ -1239,21 +1099,8 @@ namespace examples::cube {
             .vao = std::move(vao),
             .vao_num_triangles = cubeVerts.size(),
             .vertBuffer = std::move(vbo),
-            .indexBuffer = std::move(ebo),
         };
     }
-
-    struct ScreenPos {
-        int x = 0;
-        int y = 0;
-
-        bool operator==(ScreenPos const& other) const noexcept {
-            return x == other.x and y == other.y;
-        }
-        bool operator!=(ScreenPos const& other) const noexcept {
-            return x != other.x or y != other.y;
-        }
-    };
 
     struct ScreenDims {
         int w = 0;
@@ -1263,47 +1110,6 @@ namespace examples::cube {
             w{p.first}, h{p.second} {
         }
     };
-
-    struct Point2d {
-        float x = 0.0f;
-        float y = 0.0f;
-        Point2d operator-(Point2d const& other) const noexcept {
-            return {x - other.x, y - other.y};
-        }
-    };
-
-    // Returns the position of a point in the screen in native device coordinates (NDC),
-    // such that the screen point is in the range [-1.0..1.0] in x and y.
-    Point2d to_ndc(ScreenDims const& d, ScreenPos const& p) {
-        float xs = (static_cast<float>(p.x*2)/static_cast<float>(d.w)) - 1.0f;
-        float ys = (static_cast<float>(p.y*2)/static_cast<float>(d.h)) - 1.0f;
-        ys = -ys; // screen coords are reversed in y
-        return Point2d{xs, ys};
-    }
-
-    glm::vec3 arcball_vector(ScreenDims const& d, ScreenPos const& p) {
-        // model the screen's sphere as a unit sphere (r = 1.0f) in the coordinate
-        // space ([-1.0..1.0], [-1.0..1.0]). Map the screen coordinates (x and y)
-        // ([0..w],[0..h]) to that space (effectively, native device coords)
-        //
-        // The sphere's z-axis is pointing towards the viewer. Therefore, the middle
-        // of the sphere is z = -1 and the edges of the sphere are where z = 0
-        auto c = to_ndc(d, p);
-
-        // Pythagoras' theorem dictates that r2 = sqrt(x2 + y2 + z2) or, with a
-        // unit sphere (r2 == 1.0), that 1.0 == sqrt(x2 + y2 + z2). Put simply:
-        //
-        //         1.0 = x2 + y2 + z2
-        // or:     z2  = 1.0 - (x2+y2)
-        float x2y2 = c.x*c.x + c.y*c.y;
-
-        // The above *requires* that the (x,y) point the mouse is at is within the
-        // bounds of the unit sphere. If it isn't, then clamp it to the edge of the
-        // sphere (z == 0)
-        float z = x2y2 > 1.0f ? 0.0f : sqrt(1.0f - x2y2);
-
-        return glm::vec3{c.x, c.y, z};
-    }
 
     void show(ui::State& s) {
         GLState gls = initialize();
@@ -1335,7 +1141,8 @@ namespace examples::cube {
         bool panning = false;
         glm::vec3 pan = {0.0f, 0.0f, 0.0f};
 
-        for (;;) {
+        // top-level loop just constantly renders the state (above)
+        while (true) {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             // render info messages
@@ -1505,18 +1312,482 @@ namespace examples::cube {
     }
 }
 
-void show_osim_model(ui::State& s, std::string const& model_file) {
-    examples::fractal::show(s);
-    examples::cube::show(s);
-}
+namespace examples::geom {
+    static const char vertex_shader_src[] = R"(
+        #version 430
 
-static char const* files[] = {
-    "/home/adam/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
-    "/home/adam/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
-};
+        uniform mat4 projMat;
+        uniform mat4 viewMat;
+        uniform mat4 modelMat;
+
+        in vec3 location;
+
+        void main() {
+            gl_Position = projMat * viewMat * modelMat * vec4(location, 1.0);
+        }
+    )";
+
+    static const char frag_shader_src[] = R"(
+        #version 430
+
+        uniform vec4 rgba;
+
+        out vec4 color;
+
+        void main() {
+            color = rgba;
+        }
+    )";
+
+    struct Vec3 {
+        GLfloat x;
+        GLfloat y;
+        GLfloat z;
+    };
+
+    struct Mesh_point {
+        Vec3 position;
+        Vec3 normal;
+    };
+
+    // dumb alg. for producing a unit (radius = 1.0, height = 1.0) cylinder
+    //
+    // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
+    //       would reduce the amount of vertices needed
+    std::vector<Mesh_point> unit_cylinder_mesh(unsigned num_sides) {
+        if (num_sides < 3) {
+            throw std::runtime_error{"cannot create a cylinder with fewer than 3 sides"};
+        }
+
+        std::vector<Mesh_point> rv;
+        rv.reserve(2*3*num_sides + 6*num_sides);
+
+        float step_angle = (2*M_PI)/num_sides;
+        float top_z = -0.5f;
+        float bottom_z = +0.5f;
+
+        // top
+        {
+            Vec3 normal = {0.0f, 0.0f, -1.0f};
+            Mesh_point top_middle = {
+                .position = {0.0f, 0.0f, top_z},
+                .normal = normal,
+            };
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i*step_angle;
+                float theta_end = (i+1)*step_angle;
+                rv.push_back(top_middle);
+                rv.push_back(Mesh_point {
+                    .position = {
+                        .x = sin(theta_start),
+                        .y = cos(theta_start),
+                        .z = top_z,
+                    },
+                    .normal = normal,
+                });
+                rv.push_back(Mesh_point {
+                     .position = {
+                        .x = sin(theta_end),
+                        .y = cos(theta_end),
+                        .z = top_z,
+                    },
+                    .normal = normal,
+                });
+            }
+        }
+
+        // bottom
+        {
+            Vec3 bottom_normal = {0.0f, 0.0f, -1.0f};
+            Mesh_point top_middle = {
+                .position = {0.0f, 0.0f, bottom_z},
+                .normal = bottom_normal,
+            };
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i*step_angle;
+                float theta_end = (i+1)*step_angle;
+
+                rv.push_back(top_middle);
+                rv.push_back(Mesh_point {
+                    .position = {
+                        .x = sin(theta_start),
+                        .y = cos(theta_start),
+                        .z = bottom_z,
+                    },
+                    .normal = bottom_normal,
+                });
+                rv.push_back(Mesh_point {
+                     .position = {
+                        .x = sin(theta_end),
+                        .y = cos(theta_end),
+                        .z = bottom_z,
+                    },
+                    .normal = bottom_normal,
+                });
+            }
+        }
+
+        // sides
+        {
+            float norm_start = step_angle/2.0f;
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i * step_angle;
+                float theta_end = theta_start + step_angle;
+                float norm_theta = theta_start + norm_start;
+
+                Vec3 normal = {sin(norm_theta), cos(norm_theta), 0.0f};
+                Vec3 top1 = {sin(theta_start), cos(theta_start), top_z};
+                Vec3 top2 = {sin(theta_end), cos(theta_end), top_z};
+                Vec3 bottom1 = top1;
+                bottom1.z = bottom_z;
+                Vec3 bottom2 = top2;
+                bottom2.z = bottom_z;
+
+                rv.push_back(Mesh_point{top1, normal});
+                rv.push_back(Mesh_point{top2, normal});
+                rv.push_back(Mesh_point{bottom1, normal});
+
+                rv.push_back(Mesh_point{bottom1, normal});
+                rv.push_back(Mesh_point{bottom2, normal});
+                rv.push_back(Mesh_point{top2, normal});
+            }
+        }
+
+        return rv;
+    }
+
+    struct Triangle_mesh {
+        unsigned num_verts;
+        gl::Array_buffer vbo;
+        gl::Vertex_array vao;
+
+        Triangle_mesh(gl::Attribute& in_attr, std::vector<Mesh_point> const& points) :
+            num_verts(points.size()) {
+
+            gl::BindVertexArray(vao);
+            {
+                gl::BindBuffer(vbo);
+                gl::BufferData(vbo, sizeof(Mesh_point) * points.size(), points.data(), GL_STATIC_DRAW);
+                gl::VertexAttributePointer(in_attr, 3, GL_FLOAT, GL_FALSE, sizeof(Mesh_point), 0);
+                gl::EnableVertexAttribArray(in_attr);
+            }
+            gl::BindVertexArray();
+        }
+    };
+
+    Triangle_mesh make_cylinder(gl::Attribute& in_attr, unsigned num_sides) {
+        auto points = unit_cylinder_mesh(num_sides);
+        return Triangle_mesh{in_attr, points};
+    }
+
+    struct GLState {
+        gl::Program program;
+
+        gl::UniformMatrix4fv projMat;
+        gl::UniformMatrix4fv viewMat;
+        gl::UniformMatrix4fv modelMat;
+        gl::UniformVec4f rgba;
+
+        gl::Attribute location;
+
+        Triangle_mesh cylinder;
+    };
+
+    GLState initialize() {
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        auto program = gl::Program{};
+        auto vertex_shader = gl::Vertex_shader::Compile(vertex_shader_src);
+        gl::AttachShader(program, vertex_shader);
+        auto frag_shader = gl::Fragment_shader::Compile(frag_shader_src);
+        gl::AttachShader(program, frag_shader);
+
+        gl::LinkProgram(program);
+
+        auto projMat = gl::UniformMatrix4fv{program, "projMat"};
+        auto viewMat = gl::UniformMatrix4fv{program, "viewMat"};
+        auto modelMat = gl::UniformMatrix4fv{program, "modelMat"};
+        auto rgba = gl::UniformVec4f{program, "rgba"};
+
+        auto in_position = gl::Attribute{program, "location"};
+
+        auto cylinder = make_cylinder(in_position, 24);
+
+        return GLState {
+            .program = std::move(program),
+
+            .projMat = std::move(projMat),
+            .viewMat = std::move(viewMat),
+            .modelMat = std::move(modelMat),
+            .rgba = std::move(rgba),
+
+            .location = std::move(in_position),
+
+            .cylinder = std::move(cylinder),
+        };
+    }
+
+    struct Line {
+        gl::Array_buffer vbo;
+        gl::Vertex_array vao;
+        osim::Line data;
+
+        Line(gl::Attribute& in_attr, osim::Line const& _data) :
+            data{_data} {
+            Vec3 points[2] = {
+                {_data.p1.x, _data.p1.y, _data.p1.z},
+                {_data.p2.x, _data.p2.y, _data.p2.z},
+            };
+            gl::BindVertexArray(vao);
+            {
+                gl::BindBuffer(vbo);
+                gl::BufferData(vbo, sizeof(points), points, GL_STATIC_DRAW);
+                gl::VertexAttributePointer(in_attr, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), 0);
+                gl::EnableVertexAttribArray(in_attr);
+            }
+            gl::BindVertexArray();
+        }
+    };
+
+    struct ModelState {
+        std::vector<osim::Cylinder> cylinders;
+        std::vector<Line> lines;
+        std::vector<osim::Sphere> spheres;
+    };
+
+    ModelState load_model(GLState& gls, char const* path) {
+        ModelState rv;
+        for (osim::Geometry const& g : osim::geometry_in(path)) {
+            std::cerr << g << std::endl;
+            std::visit(overloaded {
+                [&](osim::Cylinder const& c) {
+                    rv.cylinders.push_back(c);
+                },
+                [&](osim::Line const& l) {
+                    rv.lines.push_back(Line{ gls.location, l });
+                },
+                [&](osim::Sphere const& s) {
+                    rv.spheres.push_back(s);
+                }
+            }, g);
+        }
+        return rv;
+    }
+
+    struct ScreenDims {
+        int w = 0;
+        int h = 0;
+
+        ScreenDims(std::pair<int, int> p) :
+            w{p.first}, h{p.second} {
+        }
+    };
+
+    void show(ui::State& s) {
+        static char const* files[] = {
+            "/home/adam/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
+            "/home/adam/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
+        };
+
+        GLState gls = initialize();
+        auto font = sdl::ttf::Font{"../FantasqueSansMono-Regular.ttf", 16};
+        auto font_color = SDL_Color{ .r = 0x00, .g = 0x00, .b = 0x00, .a = 0xff };
+        ModelState ms = load_model(gls, files[0]);
+
+        glEnable(GL_DEPTH_TEST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  // when shrinking textures
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);  // when magnifying textures
+        glPointSize(4.0f);
+
+        bool wireframe_mode = false;
+        ScreenDims window_dims = sdl::window_size(s.window);
+
+        // camera: at a fixed position pointing at a fixed origin. The "camera" works by translating +
+        // rotating all objects around that origin. Rotation is expressed as polar coordinates. Camera
+        // panning is represented as a translation vector.
+        float radius = 1.0f;
+        float wheel_sensitivity = 0.9f;
+
+        float fov = 120.0f;
+
+        bool dragging = false;
+        float theta = 0.0f;
+        float phi = 0.0f;
+        float sensitivity = 1.0f;
+
+        bool panning = false;
+        glm::vec3 pan = {0.0f, 0.0f, 0.0f};
+
+        // top-level loop just constantly renders the state (above)
+        while (true) {
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            // render info messages
+            {
+                glActiveTexture(GL_TEXTURE0);  // important: used for rasterization
+                auto ss = std::stringstream{};
+                ss << "radius = " << radius << std::endl;
+                sdl::Surface surf = sdl::ttf::RenderText_Blended_Wrapped(font, ss.str().c_str(), font_color, 1000);
+                sdl::Texture tex = sdl::CreateTextureFromSurface(s.renderer, surf);
+                auto text_pos = SDL_Rect{.x = 16, .y = 16, .w = surf->w, .h = surf->h};
+                SDL_RenderCopy(s.renderer, tex, nullptr, &text_pos);
+            }
+
+            glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
+
+            glEnableClientState(GL_VERTEX_ARRAY);
+            gl::UseProgram(gls.program);
+
+            // set *invariant* uniforms
+            auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), -theta, glm::vec3{0.0f, 1.0f, 0.0f});
+            auto theta_vec = glm::normalize(glm::vec3{sin(theta), 0.0f, cos(theta)});
+            auto phi_axis = glm::cross(theta_vec, glm::vec3{0.0, 1.0f, 0.0f});
+            auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), -phi, phi_axis);
+            auto pan_translate = glm::translate(glm::identity<glm::mat4>(), pan);
+            {
+                // projection viewport
+                float aspect_ratio = static_cast<float>(window_dims.w)/static_cast<float>(window_dims.h);
+                glglm::Uniform(gls.projMat, glm::perspective(fov, aspect_ratio, 0.1f, 100.0f));
+
+                glm::mat4 view_matrix =
+                        glm::lookAt(glm::vec3(0.0f, 0.0f, radius), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3{0.0f, 1.0f, 0.0f}) * rot_theta * rot_phi * pan_translate;
+                glglm::Uniform(gls.viewMat, view_matrix);
+            }
+
+            for (auto const& c : ms.cylinders) {
+                gl::BindVertexArray(gls.cylinder.vao);
+                glglm::Uniform(gls.rgba, c.rgba);
+                auto hacky_cylinder_correction =
+                        glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{-1.0f, 0.0f, 0.0f});
+                glglm::Uniform(gls.modelMat, glm::scale(c.transform * hacky_cylinder_correction, c.scale));
+                glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
+                gl::BindVertexArray();
+            }
+
+            for (auto const& c : ms.spheres) {
+                gl::BindVertexArray(gls.cylinder.vao);
+                glglm::Uniform(gls.rgba, c.rgba);
+                auto hacky_cylinder_correction =
+                        glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{-1.0f, 0.0f, 0.0f});
+                auto scaler = glm::scale(c.transform * hacky_cylinder_correction, glm::vec3{c.radius, c.radius, c.radius});
+                glglm::Uniform(gls.modelMat, scaler);
+                glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
+                gl::BindVertexArray();
+            }
+
+            for (auto& l : ms.lines) {
+                glLineWidth(5.0f);
+                gl::BindVertexArray(l.vao);
+                glglm::Uniform(gls.rgba, l.data.rgba);
+                glglm::Uniform(gls.modelMat, glm::identity<glm::mat4>());
+                glDrawArrays(GL_LINES, 0, 2);
+                gl::BindVertexArray();
+            }
+
+            gl::UseProgram();
+            glDisableClientState(GL_VERTEX_ARRAY);
+
+            // draw
+            SDL_GL_SwapWindow(s.window);
+
+            // event loop
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                if (e.type == SDL_QUIT) {
+                    return;
+                } else if (e.type == SDL_KEYDOWN) {
+                    switch (e.key.keysym.sym) {
+                        case SDLK_ESCAPE:
+                            return;  // quit visualizer
+                        case SDLK_w:
+                            wireframe_mode = not wireframe_mode;
+                            break;
+                    }
+                } else if (e.type == SDL_MOUSEBUTTONDOWN) {
+                    switch (e.button.button) {
+                        case SDL_BUTTON_LEFT:
+                            dragging = true;
+                            break;
+                        case SDL_BUTTON_RIGHT:
+                            panning = true;
+                            break;
+                    }
+                } else if (e.type == SDL_MOUSEBUTTONUP) {
+                    switch (e.button.button) {
+                        case SDL_BUTTON_LEFT:
+                            dragging = false;
+                            break;
+                        case SDL_BUTTON_RIGHT:
+                            panning = false;
+                            break;
+                    }
+                } else if (e.type == SDL_MOUSEMOTION) {
+                    if (dragging) {
+                        // alter camera position while dragging
+                        float dx = -static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
+                        float dy = static_cast<float>(e.motion.yrel)/static_cast<float>(window_dims.h);
+                        theta += 2.0f * static_cast<float>(M_PI) * sensitivity * dx;
+                        phi += 2.0f * static_cast<float>(M_PI) * sensitivity * dy;
+                    }
+
+                    if (panning) {
+                        float dx = static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
+                        float dy = -static_cast<float>(e.motion.yrel)/static_cast<float>(window_dims.h);
+
+                        // this assumes the scene is not rotated, so we need to rotate these
+                        // axes to match the scene's rotation
+                        // TODO: cleanup
+                        glm::vec4 default_panning_axis = {dx * 2.0f * M_PI, dy * 2.0f * M_PI, 0.0f, 1.0f};
+                        auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), theta, glm::vec3{0.0f, 1.0f, 0.0f});
+                        auto theta_vec = glm::normalize(glm::vec3{sin(theta), 0.0f, cos(theta)});
+                        auto phi_axis = glm::cross(theta_vec, glm::vec3{0.0, 1.0f, 0.0f});
+                        auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), phi, phi_axis);
+
+                        glm::vec4 panning_axes = rot_phi * rot_theta * default_panning_axis;
+                        pan.x += panning_axes.x;
+                        pan.y += panning_axes.y;
+                        pan.z += panning_axes.z;
+                    }
+
+                    if (dragging or panning) {
+                        // wrap mouse if it hits edges
+                        constexpr int edge_width = 5;
+                        if (e.motion.x + edge_width > window_dims.w) {
+                            SDL_WarpMouseInWindow(s.window, edge_width, e.motion.y);
+                        }
+                        if (e.motion.x - edge_width < 0) {
+                            SDL_WarpMouseInWindow(s.window, window_dims.w - edge_width, e.motion.y);
+                        }
+                        if (e.motion.y + edge_width > window_dims.h) {
+                            SDL_WarpMouseInWindow(s.window, e.motion.x, edge_width);
+                        }
+                        if (e.motion.y - edge_width < 0) {
+                            SDL_WarpMouseInWindow(s.window, e.motion.x, window_dims.h - edge_width);
+                        }
+                    }
+                } else if (e.type == SDL_WINDOWEVENT) {
+                    window_dims = sdl::window_size(s.window);
+                    glViewport(0, 0, window_dims.w, window_dims.h);
+                } else if (e.type == SDL_MOUSEWHEEL) {
+                    if (e.wheel.y > 0 and radius >= 0.1f) {
+                        radius *= wheel_sensitivity;
+                    }
+
+                    if (e.wheel.y <= 0 and radius < 100.0f) {
+                        radius /= wheel_sensitivity;
+                    }
+                }
+            }
+        }
+    }
+}
 
 int main() {
     auto ui = ui::State{};
-    show_osim_model(ui, files[0]);
+    //examples::fractal::show(s);
+    //examples::cube::show(s);
+    examples::geom::show(ui);
     return 0;
 };
