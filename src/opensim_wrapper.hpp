@@ -47,6 +47,9 @@ namespace osim {
     };
 
     struct Mesh final {
+        glm::mat4 transform;
+        glm::vec3 scale;
+        glm::vec4 rgba;
     };
 
     struct Arrow final {
@@ -61,7 +64,8 @@ namespace osim {
     using Geometry = std::variant<
         Cylinder,
         Line,
-        Sphere
+        Sphere,
+        Mesh
     >;
 
     std::vector<Geometry> geometry_in(std::string_view model_path);

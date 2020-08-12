@@ -8,155 +8,6 @@ using namespace SimTK;
 using namespace OpenSim;
 
 namespace {
-    /*
-    struct MutableModel : public Model {
-        MutableModel() : Model{} {}
-        void load_file(std::string const& s) {
-            XMLDocument* d = new XMLDocument(s);
-            setDocument(d);
-            const std::string saveWorkingDirectory = IO::getCwd();
-            const std::string directoryOfXMLFile = IO::getParentDirectory(s);
-            IO::chDir(directoryOfXMLFile);
-            try {
-                updateFromXMLDocument();
-            } catch (...) {
-                IO::chDir(saveWorkingDirectory);
-                throw; // re-issue the exception
-            }
-            OPENSIM_THROW_IF(getDocument()->getDocumentVersion() < 10901,
-                OpenSim::Exception,
-                "Model file " + s+ " is using unsupported file format"
-                ". Please open model and save it in OpenSim version 3.3 to upgrade.");
-
-            log_info("Loaded model {} from file {}", getName(), getInputFileName());
-
-            try {
-                finalizeFromProperties();
-            }
-            catch(const InvalidPropertyValue& err) {
-                log_error("Model was unable to finalizeFromProperties."
-                          "Update the model file and reload OR update the property and "
-                          "call finalizeFromProperties() on the model."
-                          "(details: {}).",
-                        err.what());
-                IO::chDir(saveWorkingDirectory);
-            }
-            IO::chDir(saveWorkingDirectory);
-        }
-    };
-
-    void show_osim_file(std::string const& path) {
-        Model model{path};
-        model.finalizeFromProperties();
-        model.finalizeConnections();
-
-        // Configure the model.
-
-        model.buildSystem();
-        State& state = model.initSystem();
-        model.initializeState();
-        model.updMatterSubsystem().setShowDefaultGeometry(false);
-        SimTK::Visualizer viz{model.getMultibodySystem()};
-        viz.setShutdownWhenDestructed(true);
-        viz.setCameraClippingPlanes(.01,100.);
-        viz.setWindowTitle("lol");
-
-        DynamicDecorationGenerator dg{&model};
-        viz.addDecorationGenerator(&dg);
-
-        Array_<DecorativeGeometry> tmp;
-        dg.generateDecorations(state, tmp);
-        GeomVisitor v{model, state};
-        for (DecorativeGeometry& dg : tmp) {
-            dg.implementGeometry(v);
-        }
-
-        viz.setBackgroundType(viz.SolidColor);
-        viz.setBackgroundColor(White);
-        viz.drawFrameNow(state);
-
-
-        using std::chrono_literals::operator""s;
-        std::this_thread::sleep_for(5s);
-    }
-
-    std::string to_string(Transform const& t) {
-        std::stringstream ss;
-        ss << "rotation = " << t.R()[0] << t.R()[1] << t.R()[2];
-        ss << " translation = " << t.T()[0] << "x " << t.T()[1] << "y " << t.T()[2] << "z";
-        return ss.str();
-    }
-
-    struct GeomVisitor : public DecorativeGeometryImplementation {
-        Model& model;
-        State& state;
-
-        GeomVisitor(Model& _model, State& _state) : model{_model}, state{_state} {
-        }
-
-        Transform ground_to_decoration_xform(DecorativeGeometry const& geom) {
-            SimbodyMatterSubsystem const& ms = model.getSystem().getMatterSubsystem();
-            MobilizedBody const& mobod = ms.getMobilizedBody(MobilizedBodyIndex(geom.getBodyId()));
-            Transform const& ground_to_body_xform = mobod.getBodyTransform(state);
-            Transform const& body_to_decoration_xform = geom.getTransform();
-
-            return ground_to_body_xform * body_to_decoration_xform;
-        }
-
-        void implementPointGeometry(const DecorativePoint& geom) override {
-            std::cerr << "point: " << geom.getPoint() << std::endl;
-        }
-        void implementLineGeometry(const DecorativeLine& geom) override {
-            std::cerr << "line:" << std::endl
-                      << "    p1 = " << geom.getPoint1() << std::endl
-                      << "    p2 = " << geom.getPoint2() << std::endl;
-        }
-        void implementBrickGeometry(const DecorativeBrick& geom) override {
-            std::cerr << "brick" << std::endl;
-        }
-        void implementCylinderGeometry(const DecorativeCylinder& geom) override {
-            std::cerr << "cylinder:" << std::endl
-                      << "    radius = " << geom.getRadius() << std::endl
-                      << "    xform = " << to_string(ground_to_decoration_xform(geom)) << std::endl;
-        }
-        void implementCircleGeometry(const DecorativeCircle& geom) override {
-            std::cerr << "circle"  << std::endl;
-        }
-        void implementSphereGeometry(const DecorativeSphere& geom) override {
-            Transform xform = ground_to_decoration_xform(geom);
-            std::cerr << "sphere:"  << std::endl
-                      << "    radius = " << geom.getRadius() << std::endl
-                      << "    xform = " << to_string(xform) << std::endl;
-        }
-        void implementEllipsoidGeometry(const DecorativeEllipsoid& geom) override {
-            std::cerr << "ellipsoid:" << std::endl
-                      << "    radii = " << geom.getRadii() << std::endl;
-        }
-        void implementFrameGeometry(const DecorativeFrame& geom) override {
-            std::cerr << "frame"  << std::endl;
-        }
-        void implementTextGeometry(const DecorativeText& geom) override {
-            std::cerr << "text"  << std::endl;
-        }
-        void implementMeshGeometry(const DecorativeMesh& geom) override {
-            std::cerr << "mesh" << std::endl;
-        }
-        void implementMeshFileGeometry(const DecorativeMeshFile& geom) override {
-            std::cerr << "meshfile:" << std::endl
-                      << "    filename = " << geom.getMeshFile() << std::endl;
-        }
-        void implementArrowGeometry(const DecorativeArrow& geom) override {
-            std::cerr << "arrow" << std::endl;
-        }
-        void implementTorusGeometry(const DecorativeTorus& geom) override {
-            std::cerr << "torus" << std::endl;
-        }
-        void implementConeGeometry(const DecorativeCone& geom) override {
-            std::cerr << "cone" << std::endl;
-        }
-    };
-    */
-
     void generateGeometry(Model& model, State const& state, Array_<DecorativeGeometry>& geometry) {
         model.generateDecorations(true, model.getDisplayHints(), state, geometry);
         ComponentList<const Component> allComps = model.getComponentList();
@@ -293,11 +144,31 @@ namespace {
         }
         void implementFrameGeometry(const DecorativeFrame&) override {
         }
-        void implementTextGeometry(const DecorativeText& t) override {
+        void implementTextGeometry(const DecorativeText&) override {
         }
         void implementMeshGeometry(const DecorativeMesh&) override {
         }
-        void implementMeshFileGeometry(const DecorativeMeshFile&) override {
+        void implementMeshFileGeometry(const DecorativeMeshFile& m) override {
+            PolygonalMesh const& mesh = m.getMesh();
+            std::map<int, int> face_counts;
+            for (auto i = 0; i < mesh.getNumFaces(); ++i) {
+                auto cnt = mesh.getNumVerticesForFace(i);
+                face_counts[cnt]++;
+            }
+
+            using std::endl;
+            std::cerr << "mesh: " << endl
+                      << "    num faces = " << mesh.getNumFaces() << endl
+                      << "    num vertices = " << mesh.getNumVertices() << endl
+                      << "    dist = ";
+            for (auto [v, cnt] : face_counts) {
+                std::cerr << "[" << v << ", " << cnt << "]";
+            }
+            std::cerr << endl;
+
+
+            out.push_back(osim::Mesh{
+            });
         }
         void implementArrowGeometry(const DecorativeArrow&) override {
         }

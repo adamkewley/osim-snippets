@@ -920,6 +920,10 @@ namespace  osim {
           << "    radius = " << s.radius << std::endl;
         return o;
     }
+    std::ostream& operator<<(std::ostream& o, osim::Mesh const& m) {
+        o << "mesh:" << std::endl;
+        return o;
+    }
     std::ostream& operator<<(std::ostream& o, osim::Geometry const& g) {
         std::visit([&](auto concrete) { o << concrete; }, g);
         return o;
@@ -1558,7 +1562,6 @@ namespace examples::geom {
     ModelState load_model(GLState& gls, char const* path) {
         ModelState rv;
         for (osim::Geometry const& g : osim::geometry_in(path)) {
-            std::cerr << g << std::endl;
             std::visit(overloaded {
                 [&](osim::Cylinder const& c) {
                     rv.cylinders.push_back(c);
@@ -1568,6 +1571,9 @@ namespace examples::geom {
                 },
                 [&](osim::Sphere const& s) {
                     rv.spheres.push_back(s);
+                },
+                [&](osim::Mesh const& m) {
+                    std::cerr << m << std::endl;
                 }
             }, g);
         }
