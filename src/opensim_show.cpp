@@ -1,9 +1,9 @@
-﻿#include <SDL2/SDL.h>
+﻿#include <SDL.h>
 #include "opensim_wrapper.hpp"
 
 #include <SDL_ttf.h>
 #include <GL/glew.h>
-#include <GL/glut.h>
+#include <glut.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -28,6 +28,14 @@ using std::string_literals::operator""s;
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 // explicit deduction guide (not needed as of C++20)
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+static char const* files[] = {
+    "/Users/akewley/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
+    "/Users/akewley/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
+};
+static char fantastque_font_path[] = "/Users/akewley/Desktop/osim-snippets/FantasqueSansMono-Regular.ttf";
+static char container_jpeg_path[] = "/Users/akewley/Desktop/osim-snippets/container.jpg";
+static char awesomeface_path[] = "/Users/akewley/Desktop/osim-snippets/awesomeface.png";
 
 namespace sdl {
     class Surface final {
@@ -258,6 +266,32 @@ namespace gl {
         return std::string{reinterpret_cast<char const*>(err_string)};
     }
 
+    void assert_no_errors(char const* func) {
+        return ;
+        std::vector<GLenum> errors;
+        for (GLenum error = glGetError(); error != GL_NO_ERROR; error = glGetError()) {
+            errors.push_back(error);
+        }
+
+        if (errors.empty()) {
+            return;
+        }
+
+        std::stringstream msg;
+        msg << func << " failed";
+        if (errors.size() == 1) {
+            msg << ": ";
+        } else {
+            msg << " with " << errors.size() << " errors: ";
+        }
+        for (auto it = errors.begin(); it != errors.end()-1; ++it) {
+            msg << to_string(gluErrorString(*it)) << ", ";
+        }
+        msg << to_string(gluErrorString(errors.back()));
+
+        throw std::runtime_error{msg.str()};
+    }
+
     class Program final {
         GLuint handle = glCreateProgram();
     public:
@@ -286,10 +320,7 @@ namespace gl {
 
     void UseProgram(Program& p) {
         glUseProgram(p);
-
-        if (GLenum error = glGetError(); error != GL_NO_ERROR) {
-            throw std::runtime_error{"glUseProgram() failed: "s + to_string(gluErrorString(error)) };
-        }
+        assert_no_errors("glUseProgram");
     }
 
     void UseProgram() {
@@ -311,7 +342,7 @@ namespace gl {
             ss << errmsg.data();
             return std::optional<std::string>{ss.str()};
         }
-        return std::nullopt;  // no errors
+        return std::nullopt;
     }
 
     struct Shader {
@@ -331,6 +362,7 @@ namespace gl {
     public:
         Shader(GLenum shaderType) :
             handle{glCreateShader(shaderType)} {
+            assert_no_errors("glCreateShader");
             if (handle == 0) {
                 throw std::runtime_error{"glCreateShader() failed"};
             }
@@ -354,6 +386,7 @@ namespace gl {
 
     void AttachShader(Program& p, Shader& s) {
         glAttachShader(p, s);
+        assert_no_errors("glAttachShader");
     }
 
     struct Vertex_shader final : public Shader {
@@ -654,8 +687,8 @@ namespace ui {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
 #endif
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
@@ -670,7 +703,7 @@ namespace ui {
                 SDL_WINDOWPOS_CENTERED,
                 1024,
                 1024,
-                SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS,
+                SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE,
         };
     }
 
@@ -868,7 +901,7 @@ namespace examples::fractal {
                         case SDLK_ESCAPE:
                             return;
                     }
-                } else if (e.type = SDL_WINDOWEVENT) {
+                } else if (e.type == SDL_WINDOWEVENT) {
                     auto [w, h] = sdl::window_size(s.window);
                     glViewport(0, 0, w, h);
                 }
@@ -921,7 +954,11 @@ namespace  osim {
         return o;
     }
     std::ostream& operator<<(std::ostream& o, osim::Mesh const& m) {
-        o << "mesh:" << std::endl;
+        o << "mesh:" << std::endl
+          << "    transform = " << m.transform << std::endl
+          << "    scale = " << m.scale << std::endl
+          << "    rgba = " << m.rgba << std::endl
+          << "    num_triangles = " << m.triangles.size() << std::endl;
         return o;
     }
     std::ostream& operator<<(std::ostream& o, osim::Geometry const& g) {
@@ -932,7 +969,7 @@ namespace  osim {
 
 namespace examples::cube {
     static const char vertex_shader_src[] = R"(
-        #version 430
+        #version 410
 
         uniform mat4 projMat;
         uniform mat4 viewMat;
@@ -950,7 +987,7 @@ namespace examples::cube {
     )";
 
     static const char frag_shader_src[] = R"(
-        #version 430
+        #version 410
 
         in vec2 uv;
         out vec4 color;
@@ -1074,7 +1111,7 @@ namespace examples::cube {
         // box texture
         auto texture1 = gl::Texture_2d{};
         {
-            auto img = stbi::Image{"../container.jpg"};
+            auto img = stbi::Image{container_jpeg_path};
             gl::BindTexture(texture1);
             stbigl::TexImage2D(texture1, 0, img);
             gl::GenerateMipMap(texture1);
@@ -1082,7 +1119,7 @@ namespace examples::cube {
 
         auto texture2 = gl::Texture_2d{};
         {
-            auto img = stbi::Image{"../awesomeface.png"};
+            auto img = stbi::Image{awesomeface_path};
             gl::BindTexture(texture2);
             stbigl::TexImage2D(texture2, 0, img);
             gl::GenerateMipMap(texture2);
@@ -1117,7 +1154,7 @@ namespace examples::cube {
 
     void show(ui::State& s) {
         GLState gls = initialize();
-        auto font = sdl::ttf::Font{"../FantasqueSansMono-Regular.ttf", 16};
+        auto font = sdl::ttf::Font{fantastque_font_path, 16};
         auto font_color = SDL_Color{ .r = 0x00, .g = 0x00, .b = 0x00, .a = 0xff };
 
         glEnable(GL_DEPTH_TEST);
@@ -1318,7 +1355,7 @@ namespace examples::cube {
 
 namespace examples::geom {
     static const char vertex_shader_src[] = R"(
-        #version 430
+        #version 410
 
         uniform mat4 projMat;
         uniform mat4 viewMat;
@@ -1332,7 +1369,7 @@ namespace examples::geom {
     )";
 
     static const char frag_shader_src[] = R"(
-        #version 430
+        #version 410
 
         uniform vec4 rgba;
 
@@ -1553,10 +1590,32 @@ namespace examples::geom {
         }
     };
 
+    // TODO: this is hacked together
+    Triangle_mesh make_mesh(gl::Attribute& in_attr, osim::Mesh const& data) {
+        std::vector<Mesh_point> triangles;
+        for (osim::Triangle const& t : data.triangles) {
+            triangles.push_back(Mesh_point{Vec3{t.p1.x, t.p1.y, t.p1.z}, {}});
+            triangles.push_back(Mesh_point{Vec3{t.p2.x, t.p2.y, t.p2.z}, {}});
+            triangles.push_back(Mesh_point{Vec3{t.p3.x, t.p3.y, t.p3.z}, {}});
+        }
+        return Triangle_mesh{in_attr, triangles};
+    }
+
+    struct Osim_mesh {
+        osim::Mesh data;
+        Triangle_mesh mesh;
+
+        Osim_mesh(gl::Attribute& in_attr, osim::Mesh _data) :
+            data{std::move(_data)},
+            mesh{make_mesh(in_attr, data)} {
+        }
+    };
+
     struct ModelState {
         std::vector<osim::Cylinder> cylinders;
         std::vector<Line> lines;
         std::vector<osim::Sphere> spheres;
+        std::vector<Osim_mesh> meshes;
     };
 
     ModelState load_model(GLState& gls, char const* path) {
@@ -1567,13 +1626,13 @@ namespace examples::geom {
                     rv.cylinders.push_back(c);
                 },
                 [&](osim::Line const& l) {
-                    rv.lines.push_back(Line{ gls.location, l });
+                    rv.lines.emplace_back(gls.location, l);
                 },
                 [&](osim::Sphere const& s) {
                     rv.spheres.push_back(s);
                 },
                 [&](osim::Mesh const& m) {
-                    std::cerr << m << std::endl;
+                    rv.meshes.emplace_back(gls.location, m);
                 }
             }, g);
         }
@@ -1590,17 +1649,16 @@ namespace examples::geom {
     };
 
     void show(ui::State& s) {
-        static char const* files[] = {
-            "/home/adam/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
-            "/home/adam/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
-        };
-
         GLState gls = initialize();
-        auto font = sdl::ttf::Font{"../FantasqueSansMono-Regular.ttf", 16};
+        auto font = sdl::ttf::Font{fantastque_font_path, 16};
         auto font_color = SDL_Color{ .r = 0x00, .g = 0x00, .b = 0x00, .a = 0xff };
         ModelState ms = load_model(gls, files[0]);
 
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glEnable(GL_DEPTH_TEST);
+        glEnable(GL_ALPHA_TEST);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_BLEND);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  // when shrinking textures
@@ -1632,7 +1690,7 @@ namespace examples::geom {
 
             // render info messages
             {
-                glActiveTexture(GL_TEXTURE0);  // important: used for rasterization
+                //glActiveTexture(GL_TEXTURE0);  // important: used for rasterization
                 auto ss = std::stringstream{};
                 ss << "radius = " << radius << std::endl;
                 sdl::Surface surf = sdl::ttf::RenderText_Blended_Wrapped(font, ss.str().c_str(), font_color, 1000);
@@ -1689,6 +1747,15 @@ namespace examples::geom {
                 glglm::Uniform(gls.rgba, l.data.rgba);
                 glglm::Uniform(gls.modelMat, glm::identity<glm::mat4>());
                 glDrawArrays(GL_LINES, 0, 2);
+                gl::BindVertexArray();
+            }
+
+            for (auto& m : ms.meshes) {
+                gl::BindVertexArray(m.mesh.vao);
+                glglm::Uniform(gls.rgba, {1.0f, 0.0f, 0.0f, 0.5f});
+                auto scaler = glm::scale(m.data.transform, m.data.scale);
+                glglm::Uniform(gls.modelMat, scaler);
+                glDrawArrays(GL_TRIANGLES, 0, m.mesh.num_verts);
                 gl::BindVertexArray();
             }
 
@@ -1792,8 +1859,8 @@ namespace examples::geom {
 
 int main() {
     auto ui = ui::State{};
-    //examples::fractal::show(s);
-    //examples::cube::show(s);
+    examples::fractal::show(ui);
+    examples::cube::show(ui);
     examples::geom::show(ui);
     return 0;
 };

@@ -46,10 +46,17 @@ namespace osim {
     struct Text final {
     };
 
+    struct Triangle {
+        glm::vec3 p1;
+        glm::vec3 p2;
+        glm::vec3 p3;
+    };
+
     struct Mesh final {
         glm::mat4 transform;
         glm::vec3 scale;
         glm::vec4 rgba;
+        std::vector<Triangle> triangles;
     };
 
     struct Arrow final {

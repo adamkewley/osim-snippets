@@ -86,12 +86,16 @@ namespace {
             return m;
         }
 
+        glm::vec3 to_vec3(Vec3 const& v) {
+            return glm::vec3{v[0], v[1], v[2]};
+        }
+
         glm::vec3 scale_factors(DecorativeGeometry const& geom) {
             Vec3 sf = geom.getScaleFactors();
             for (int i = 0; i < 3; ++i) {
                 sf[i] = sf[i] <= 0 ? 1.0 : sf[i];
             }
-            return {sf[0], sf[1], sf[2]};
+            return to_vec3(sf);
         }
 
         glm::vec4 rgba(DecorativeGeometry const& geom) {
@@ -150,24 +154,73 @@ namespace {
         }
         void implementMeshFileGeometry(const DecorativeMeshFile& m) override {
             PolygonalMesh const& mesh = m.getMesh();
-            std::map<int, int> face_counts;
-            for (auto i = 0; i < mesh.getNumFaces(); ++i) {
-                auto cnt = mesh.getNumVerticesForFace(i);
-                face_counts[cnt]++;
-            }
 
-            using std::endl;
-            std::cerr << "mesh: " << endl
-                      << "    num faces = " << mesh.getNumFaces() << endl
-                      << "    num vertices = " << mesh.getNumVertices() << endl
-                      << "    dist = ";
-            for (auto [v, cnt] : face_counts) {
-                std::cerr << "[" << v << ", " << cnt << "]";
-            }
-            std::cerr << endl;
+            // helper function: gets a vertex for a face
+            auto get_face_vert = [&](int face, int vert) {
+                return to_vec3(mesh.getVertexPosition(mesh.getFaceVertex(face, vert)));
+            };
 
+            std::vector<osim::Triangle> triangles;
+
+            for (auto face = 0; face < mesh.getNumFaces(); ++face) {
+                auto num_vertices = mesh.getNumVerticesForFace(face);
+
+                if (num_vertices < 3) {
+                    // do nothing
+                } else if (num_vertices == 3) {
+                    // standard triangle face
+
+                    triangles.push_back(osim::Triangle{
+                        get_face_vert(face, 0),
+                        get_face_vert(face, 1),
+                        get_face_vert(face, 2)
+                    });
+                } else if (num_vertices == 4) {
+                    // rectangle: split into two triangles
+
+                    triangles.push_back(osim::Triangle{
+                        get_face_vert(face, 0),
+                        get_face_vert(face, 1),
+                        get_face_vert(face, 2)
+                    });
+                    triangles.push_back(osim::Triangle{
+                        get_face_vert(face, 2),
+                        get_face_vert(face, 3),
+                        get_face_vert(face, 0)
+                    });
+                } else {
+                    // polygon with >= 4 edges:
+                    //
+                    // create a vertex at the average center point and attach
+                    // every two verices to the center as triangles.
+
+                    auto center = glm::vec3{0.0f, 0.0f, 0.0f};
+                    for (int vert = 0; vert < num_vertices; ++vert) {
+                        center += get_face_vert(face, vert);
+                    }
+                    center /= num_vertices;
+
+                    for (int vert = 0; vert < num_vertices-1; ++vert) {
+                        triangles.push_back(osim::Triangle{
+                            get_face_vert(face, vert),
+                            get_face_vert(face, vert+1),
+                            center
+                        });
+                    }
+                    // loop back
+                    triangles.push_back(osim::Triangle{
+                        get_face_vert(face, num_vertices-1),
+                        get_face_vert(face, 0),
+                        center
+                    });
+                }
+            }
 
             out.push_back(osim::Mesh{
+                .transform = transform(m),
+                .scale = scale_factors(m),
+                .rgba = rgba(m),
+                .triangles = std::move(triangles),
             });
         }
         void implementArrowGeometry(const DecorativeArrow&) override {
