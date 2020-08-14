@@ -3,12 +3,18 @@
 
 #include <SDL_ttf.h>
 #include <GL/glew.h>
-#include <glut.h>
+#include <GL/glut.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include <imgui.h>
+
+// imgui
+#include "imgui.h"
+#include "examples/imgui_impl_sdl.h"
+#include "examples/imgui_impl_opengl3.h"
 
 #include <string>
 #include <exception>
@@ -19,7 +25,7 @@
 #include <chrono>
 #include <algorithm>
 #include <iostream>
-
+#include <filesystem>
 
 using std::string_literals::operator""s;
 
@@ -30,12 +36,12 @@ template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 static char const* files[] = {
-    "/Users/akewley/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
-    "/Users/akewley/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
+    "/home/adam/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
+    "/home/adam/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
 };
-static char fantastque_font_path[] = "/Users/akewley/Desktop/osim-snippets/FantasqueSansMono-Regular.ttf";
-static char container_jpeg_path[] = "/Users/akewley/Desktop/osim-snippets/container.jpg";
-static char awesomeface_path[] = "/Users/akewley/Desktop/osim-snippets/awesomeface.png";
+static char fantastque_font_path[] = "/home/adam/Desktop/osim-snippets/FantasqueSansMono-Regular.ttf";
+static char container_jpeg_path[] = "/home/adam/Desktop/osim-snippets/container.jpg";
+static char awesomeface_path[] = "/home/adam/Desktop/osim-snippets/awesomeface.png";
 
 namespace sdl {
     class Surface final {
@@ -196,7 +202,7 @@ namespace sdl {
 
     struct Context final {
         Context() {
-            if (SDL_Init(SDL_INIT_VIDEO)  != 0) {
+            if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER)  != 0) {
                 throw std::runtime_error{"SDL_Init: failed: "s + SDL_GetError()};
             }
         }
@@ -692,7 +698,7 @@ namespace ui {
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-        // vsync SDL_GL_SetSwapInterval(0);
+        SDL_GL_SetSwapInterval(1);  // vsync
 
         //SDL_SetRelativeMouseMode(SDL_TRUE);
         //SDL_CaptureMouse(SDL_TRUE);
@@ -1857,10 +1863,623 @@ namespace examples::geom {
     }
 }
 
+namespace ig {
+    struct Context {
+        Context() {
+            ImGui::CreateContext();
+        }
+        Context(Context const&) = delete;
+        Context(Context&&) = delete;
+        Context& operator=(Context const&) = delete;
+        Context& operator=(Context&&) = delete;
+        ~Context() noexcept {
+            ImGui::DestroyContext();
+        }
+    };
+
+    struct SDL2_Context {
+        SDL2_Context(SDL_Window* w, SDL_GLContext gl) {
+            ImGui_ImplSDL2_InitForOpenGL(w, gl);
+        }
+        SDL2_Context(SDL2_Context const&) = delete;
+        SDL2_Context(SDL2_Context&&) = delete;
+        SDL2_Context& operator=(SDL2_Context const&) = delete;
+        SDL2_Context& operator=(SDL2_Context&&) = delete;
+        ~SDL2_Context() noexcept {
+            ImGui_ImplSDL2_Shutdown();
+        }
+    };
+
+    struct OpenGL3_Context {
+        OpenGL3_Context(char const* version) {
+            ImGui_ImplOpenGL3_Init(version);
+        }
+        OpenGL3_Context(OpenGL3_Context const&) = delete;
+        OpenGL3_Context(OpenGL3_Context&&) = delete;
+        OpenGL3_Context& operator=(OpenGL3_Context const&) = delete;
+        OpenGL3_Context& operator=(OpenGL3_Context&&) = delete;
+        ~OpenGL3_Context() noexcept {
+            ImGui_ImplOpenGL3_Shutdown();
+        }
+    };
+}
+
+namespace examples::imgui {
+    static const char vertex_shader_src[] = R"(
+        #version 410
+
+        uniform mat4 projMat;
+        uniform mat4 viewMat;
+        uniform mat4 modelMat;
+
+        in vec3 location;
+
+        void main() {
+            gl_Position = projMat * viewMat * modelMat * vec4(location, 1.0);
+        }
+    )";
+
+    static const char frag_shader_src[] = R"(
+        #version 410
+
+        uniform vec4 rgba;
+
+        out vec4 color;
+
+        void main() {
+            color = rgba;
+        }
+    )";
+
+    struct Vec3 {
+        GLfloat x;
+        GLfloat y;
+        GLfloat z;
+    };
+
+    struct Mesh_point {
+        Vec3 position;
+        Vec3 normal;
+    };
+
+    // dumb alg. for producing a unit (radius = 1.0, height = 1.0) cylinder
+    //
+    // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
+    //       would reduce the amount of vertices needed
+    std::vector<Mesh_point> unit_cylinder_mesh(unsigned num_sides) {
+        if (num_sides < 3) {
+            throw std::runtime_error{"cannot create a cylinder with fewer than 3 sides"};
+        }
+
+        std::vector<Mesh_point> rv;
+        rv.reserve(2*3*num_sides + 6*num_sides);
+
+        float step_angle = (2*M_PI)/num_sides;
+        float top_z = -0.5f;
+        float bottom_z = +0.5f;
+
+        // top
+        {
+            Vec3 normal = {0.0f, 0.0f, -1.0f};
+            Mesh_point top_middle = {
+                .position = {0.0f, 0.0f, top_z},
+                .normal = normal,
+            };
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i*step_angle;
+                float theta_end = (i+1)*step_angle;
+                rv.push_back(top_middle);
+                rv.push_back(Mesh_point {
+                    .position = {
+                        .x = sin(theta_start),
+                        .y = cos(theta_start),
+                        .z = top_z,
+                    },
+                    .normal = normal,
+                });
+                rv.push_back(Mesh_point {
+                     .position = {
+                        .x = sin(theta_end),
+                        .y = cos(theta_end),
+                        .z = top_z,
+                    },
+                    .normal = normal,
+                });
+            }
+        }
+
+        // bottom
+        {
+            Vec3 bottom_normal = {0.0f, 0.0f, -1.0f};
+            Mesh_point top_middle = {
+                .position = {0.0f, 0.0f, bottom_z},
+                .normal = bottom_normal,
+            };
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i*step_angle;
+                float theta_end = (i+1)*step_angle;
+
+                rv.push_back(top_middle);
+                rv.push_back(Mesh_point {
+                    .position = {
+                        .x = sin(theta_start),
+                        .y = cos(theta_start),
+                        .z = bottom_z,
+                    },
+                    .normal = bottom_normal,
+                });
+                rv.push_back(Mesh_point {
+                     .position = {
+                        .x = sin(theta_end),
+                        .y = cos(theta_end),
+                        .z = bottom_z,
+                    },
+                    .normal = bottom_normal,
+                });
+            }
+        }
+
+        // sides
+        {
+            float norm_start = step_angle/2.0f;
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i * step_angle;
+                float theta_end = theta_start + step_angle;
+                float norm_theta = theta_start + norm_start;
+
+                Vec3 normal = {sin(norm_theta), cos(norm_theta), 0.0f};
+                Vec3 top1 = {sin(theta_start), cos(theta_start), top_z};
+                Vec3 top2 = {sin(theta_end), cos(theta_end), top_z};
+                Vec3 bottom1 = top1;
+                bottom1.z = bottom_z;
+                Vec3 bottom2 = top2;
+                bottom2.z = bottom_z;
+
+                rv.push_back(Mesh_point{top1, normal});
+                rv.push_back(Mesh_point{top2, normal});
+                rv.push_back(Mesh_point{bottom1, normal});
+
+                rv.push_back(Mesh_point{bottom1, normal});
+                rv.push_back(Mesh_point{bottom2, normal});
+                rv.push_back(Mesh_point{top2, normal});
+            }
+        }
+
+        return rv;
+    }
+
+    struct Triangle_mesh {
+        unsigned num_verts;
+        gl::Array_buffer vbo;
+        gl::Vertex_array vao;
+
+        Triangle_mesh(gl::Attribute& in_attr, std::vector<Mesh_point> const& points) :
+            num_verts(points.size()) {
+
+            gl::BindVertexArray(vao);
+            {
+                gl::BindBuffer(vbo);
+                gl::BufferData(vbo, sizeof(Mesh_point) * points.size(), points.data(), GL_STATIC_DRAW);
+                gl::VertexAttributePointer(in_attr, 3, GL_FLOAT, GL_FALSE, sizeof(Mesh_point), 0);
+                gl::EnableVertexAttribArray(in_attr);
+            }
+            gl::BindVertexArray();
+        }
+    };
+
+    Triangle_mesh make_cylinder(gl::Attribute& in_attr, unsigned num_sides) {
+        auto points = unit_cylinder_mesh(num_sides);
+        return Triangle_mesh{in_attr, points};
+    }
+
+    struct GLState {
+        gl::Program program;
+
+        gl::UniformMatrix4fv projMat;
+        gl::UniformMatrix4fv viewMat;
+        gl::UniformMatrix4fv modelMat;
+        gl::UniformVec4f rgba;
+
+        gl::Attribute location;
+
+        Triangle_mesh cylinder;
+    };
+
+    GLState initialize() {
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        auto program = gl::Program{};
+        auto vertex_shader = gl::Vertex_shader::Compile(vertex_shader_src);
+        gl::AttachShader(program, vertex_shader);
+        auto frag_shader = gl::Fragment_shader::Compile(frag_shader_src);
+        gl::AttachShader(program, frag_shader);
+
+        gl::LinkProgram(program);
+
+        auto projMat = gl::UniformMatrix4fv{program, "projMat"};
+        auto viewMat = gl::UniformMatrix4fv{program, "viewMat"};
+        auto modelMat = gl::UniformMatrix4fv{program, "modelMat"};
+        auto rgba = gl::UniformVec4f{program, "rgba"};
+
+        auto in_position = gl::Attribute{program, "location"};
+
+        auto cylinder = make_cylinder(in_position, 24);
+
+        return GLState {
+            .program = std::move(program),
+
+            .projMat = std::move(projMat),
+            .viewMat = std::move(viewMat),
+            .modelMat = std::move(modelMat),
+            .rgba = std::move(rgba),
+
+            .location = std::move(in_position),
+
+            .cylinder = std::move(cylinder),
+        };
+    }
+
+    struct Line {
+        gl::Array_buffer vbo;
+        gl::Vertex_array vao;
+        osim::Line data;
+
+        Line(gl::Attribute& in_attr, osim::Line const& _data) :
+            data{_data} {
+            Vec3 points[2] = {
+                {_data.p1.x, _data.p1.y, _data.p1.z},
+                {_data.p2.x, _data.p2.y, _data.p2.z},
+            };
+            gl::BindVertexArray(vao);
+            {
+                gl::BindBuffer(vbo);
+                gl::BufferData(vbo, sizeof(points), points, GL_STATIC_DRAW);
+                gl::VertexAttributePointer(in_attr, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), 0);
+                gl::EnableVertexAttribArray(in_attr);
+            }
+            gl::BindVertexArray();
+        }
+    };
+
+    // TODO: this is hacked together
+    Triangle_mesh make_mesh(gl::Attribute& in_attr, osim::Mesh const& data) {
+        std::vector<Mesh_point> triangles;
+        for (osim::Triangle const& t : data.triangles) {
+            triangles.push_back(Mesh_point{Vec3{t.p1.x, t.p1.y, t.p1.z}, {}});
+            triangles.push_back(Mesh_point{Vec3{t.p2.x, t.p2.y, t.p2.z}, {}});
+            triangles.push_back(Mesh_point{Vec3{t.p3.x, t.p3.y, t.p3.z}, {}});
+        }
+        return Triangle_mesh{in_attr, triangles};
+    }
+
+    struct Osim_mesh {
+        osim::Mesh data;
+        Triangle_mesh mesh;
+
+        Osim_mesh(gl::Attribute& in_attr, osim::Mesh _data) :
+            data{std::move(_data)},
+            mesh{make_mesh(in_attr, data)} {
+        }
+    };
+
+    struct ModelState {
+        std::vector<osim::Cylinder> cylinders;
+        std::vector<Line> lines;
+        std::vector<osim::Sphere> spheres;
+        std::vector<Osim_mesh> meshes;
+    };
+
+    ModelState load_model(GLState& gls, char const* path) {
+        ModelState rv;
+        for (osim::Geometry const& g : osim::geometry_in(path)) {
+            std::visit(overloaded {
+                [&](osim::Cylinder const& c) {
+                    rv.cylinders.push_back(c);
+                },
+                [&](osim::Line const& l) {
+                    rv.lines.emplace_back(gls.location, l);
+                },
+                [&](osim::Sphere const& s) {
+                    rv.spheres.push_back(s);
+                },
+                [&](osim::Mesh const& m) {
+                    rv.meshes.emplace_back(gls.location, m);
+                }
+            }, g);
+        }
+        return rv;
+    }
+
+    struct ScreenDims {
+        int w = 0;
+        int h = 0;
+
+        ScreenDims(std::pair<int, int> p) :
+            w{p.first}, h{p.second} {
+        }
+    };
+
+    void show(ui::State& s) {
+        GLState gls = initialize();
+        auto font = sdl::ttf::Font{fantastque_font_path, 16};
+        auto font_color = SDL_Color{ .r = 0x00, .g = 0x00, .b = 0x00, .a = 0xff };
+        ModelState ms = load_model(gls, files[0]);
+
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_ALPHA_TEST);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_BLEND);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  // when shrinking textures
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);  // when magnifying textures
+        glPointSize(5.0f);
+
+        bool wireframe_mode = false;
+        ScreenDims window_dims = sdl::window_size(s.window);
+
+        // camera: at a fixed position pointing at a fixed origin. The "camera" works by translating +
+        // rotating all objects around that origin. Rotation is expressed as polar coordinates. Camera
+        // panning is represented as a translation vector.
+        float radius = 1.0f;
+        float wheel_sensitivity = 0.9f;
+
+        float fov = 120.0f;
+
+        bool dragging = false;
+        float theta = 0.0f;
+        float phi = 0.0f;
+        float sensitivity = 1.0f;
+
+        bool panning = false;
+        glm::vec3 pan = {0.0f, 0.0f, 0.0f};
+
+        ig::Context imgui_ctx{};
+        ig::SDL2_Context imgui_sdl2_ctx(s.window, s.gl);
+        ig::OpenGL3_Context imgui_ogl3_ctx{"#version 130"};
+
+        ImGui::StyleColorsLight();
+
+        // top-level loop just constantly renders the state (above)
+        while (true) {
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplSDL2_NewFrame(s.window);
+
+            ImGui::NewFrame();
+            bool b = true;
+            //ImGui::ShowDemoWindow(&b);
+            ImGui::Begin("My First Tool", &b, ImGuiWindowFlags_MenuBar);
+            ImGui::Text(("File shown: "s + files[0]).c_str());
+            ImGui::SliderFloat("radius", &radius, 0.0f, 10.0f);
+            ImGui::SliderFloat("theta", &theta, 0.0f, 2*M_PI);
+            ImGui::SliderFloat("phi", &phi, 0.0f, 2*M_PI);
+
+            if (ImGui::Button("Front")) {
+                theta = 0.0f;
+                phi = 0.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Back")) {
+                theta = M_PI;
+                phi = 0.0f;
+            }
+
+            ImGui::SameLine();
+            ImGui::Text("|");
+            ImGui::SameLine();
+
+            if (ImGui::Button("Left")) {
+                theta = M_PI/2.0f;
+                phi = 0.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Right")) {
+                theta = 3.0f*(M_PI/2.0f);
+                phi = 0.0f;
+            }
+
+            ImGui::SameLine();
+            ImGui::Text("|");
+            ImGui::SameLine();
+
+            if (ImGui::Button("Top")) {
+                theta = 0.0f;
+                phi = M_PI/2.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Bottom")) {
+                theta = 0.0f;
+                phi = 3.0f*(M_PI/2.0f);
+            }
+
+            ImGui::End();
+
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            //ImGui::NewFrame();
+            //ImGui::EndFrame();
+
+            /*
+            // render info messages
+            {
+                //glActiveTexture(GL_TEXTURE0);  // important: used for rasterization
+                auto ss = std::stringstream{};
+                ss << "radius = " << radius << std::endl;
+                sdl::Surface surf = sdl::ttf::RenderText_Blended_Wrapped(font, ss.str().c_str(), font_color, 1000);
+                sdl::Texture tex = sdl::CreateTextureFromSurface(s.renderer, surf);
+                auto text_pos = SDL_Rect{.x = 16, .y = 16, .w = surf->w, .h = surf->h};
+                SDL_RenderCopy(s.renderer, tex, nullptr, &text_pos);
+            }
+            */
+
+            glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
+
+            glEnableClientState(GL_VERTEX_ARRAY);
+            gl::UseProgram(gls.program);
+
+            // set *invariant* uniforms
+            auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), -theta, glm::vec3{0.0f, 1.0f, 0.0f});
+            auto theta_vec = glm::normalize(glm::vec3{sin(theta), 0.0f, cos(theta)});
+            auto phi_axis = glm::cross(theta_vec, glm::vec3{0.0, 1.0f, 0.0f});
+            auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), -phi, phi_axis);
+            auto pan_translate = glm::translate(glm::identity<glm::mat4>(), pan);
+            {
+                // projection viewport
+                float aspect_ratio = static_cast<float>(window_dims.w)/static_cast<float>(window_dims.h);
+                glglm::Uniform(gls.projMat, glm::perspective(fov, aspect_ratio, 0.1f, 100.0f));
+
+                glm::mat4 view_matrix =
+                        glm::lookAt(glm::vec3(0.0f, 0.0f, radius), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3{0.0f, 1.0f, 0.0f}) * rot_theta * rot_phi * pan_translate;
+                glglm::Uniform(gls.viewMat, view_matrix);
+            }
+
+            for (auto const& c : ms.cylinders) {
+                gl::BindVertexArray(gls.cylinder.vao);
+                glglm::Uniform(gls.rgba, c.rgba);
+                auto hacky_cylinder_correction =
+                        glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{-1.0f, 0.0f, 0.0f});
+                glglm::Uniform(gls.modelMat, glm::scale(c.transform * hacky_cylinder_correction, c.scale));
+                glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
+                gl::BindVertexArray();
+            }
+
+            for (auto const& c : ms.spheres) {
+                gl::BindVertexArray(gls.cylinder.vao);
+                glglm::Uniform(gls.rgba, c.rgba);
+                auto hacky_cylinder_correction =
+                        glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{-1.0f, 0.0f, 0.0f});
+                auto scaler = glm::scale(c.transform * hacky_cylinder_correction, glm::vec3{c.radius, c.radius, c.radius});
+                glglm::Uniform(gls.modelMat, scaler);
+                glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
+                gl::BindVertexArray();
+            }
+
+            for (auto& l : ms.lines) {
+                glLineWidth(5.0f);
+                gl::BindVertexArray(l.vao);
+                glglm::Uniform(gls.rgba, l.data.rgba);
+                glglm::Uniform(gls.modelMat, glm::identity<glm::mat4>());
+                glDrawArrays(GL_LINES, 0, 2);
+                gl::BindVertexArray();
+            }
+
+            for (auto& m : ms.meshes) {
+                gl::BindVertexArray(m.mesh.vao);
+                glglm::Uniform(gls.rgba, {0.8f, 0.8f, 0.8f, 0.9f});
+                auto scaler = glm::scale(m.data.transform, m.data.scale);
+                glglm::Uniform(gls.modelMat, scaler);
+                glDrawArrays(GL_TRIANGLES, 0, m.mesh.num_verts);
+                gl::BindVertexArray();
+            }
+
+            gl::UseProgram();
+            glDisableClientState(GL_VERTEX_ARRAY);
+
+            // draw
+            SDL_GL_SwapWindow(s.window);
+
+            // event loop
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                ImGui_ImplSDL2_ProcessEvent(&e);
+                if (e.type == SDL_QUIT) {
+                    return;
+                } else if (e.type == SDL_KEYDOWN) {
+                    switch (e.key.keysym.sym) {
+                        case SDLK_ESCAPE:
+                            return;  // quit visualizer
+                        case SDLK_w:
+                            wireframe_mode = not wireframe_mode;
+                            break;
+                    }
+                } else if (e.type == SDL_MOUSEBUTTONDOWN) {
+                    switch (e.button.button) {
+                        case SDL_BUTTON_MIDDLE:
+                            dragging = true;
+                            break;
+                        case SDL_BUTTON_RIGHT:
+                            panning = true;
+                            break;
+                    }
+                } else if (e.type == SDL_MOUSEBUTTONUP) {
+                    switch (e.button.button) {
+                        case SDL_BUTTON_MIDDLE:
+                            dragging = false;
+                            break;
+                        case SDL_BUTTON_RIGHT:
+                            panning = false;
+                            break;
+                    }
+                } else if (e.type == SDL_MOUSEMOTION) {
+                    if (dragging) {
+                        // alter camera position while dragging
+                        float dx = -static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
+                        float dy = static_cast<float>(e.motion.yrel)/static_cast<float>(window_dims.h);
+                        theta += 2.0f * static_cast<float>(M_PI) * sensitivity * dx;
+                        phi += 2.0f * static_cast<float>(M_PI) * sensitivity * dy;
+                    }
+
+                    if (panning) {
+                        float dx = static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
+                        float dy = -static_cast<float>(e.motion.yrel)/static_cast<float>(window_dims.h);
+
+                        // this assumes the scene is not rotated, so we need to rotate these
+                        // axes to match the scene's rotation
+                        // TODO: cleanup
+                        glm::vec4 default_panning_axis = {dx * 2.0f * M_PI, dy * 2.0f * M_PI, 0.0f, 1.0f};
+                        auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), theta, glm::vec3{0.0f, 1.0f, 0.0f});
+                        auto theta_vec = glm::normalize(glm::vec3{sin(theta), 0.0f, cos(theta)});
+                        auto phi_axis = glm::cross(theta_vec, glm::vec3{0.0, 1.0f, 0.0f});
+                        auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), phi, phi_axis);
+
+                        glm::vec4 panning_axes = rot_phi * rot_theta * default_panning_axis;
+                        pan.x += panning_axes.x;
+                        pan.y += panning_axes.y;
+                        pan.z += panning_axes.z;
+                    }
+
+                    if (dragging or panning) {
+                        // wrap mouse if it hits edges
+                        constexpr int edge_width = 5;
+                        if (e.motion.x + edge_width > window_dims.w) {
+                            SDL_WarpMouseInWindow(s.window, edge_width, e.motion.y);
+                        }
+                        if (e.motion.x - edge_width < 0) {
+                            SDL_WarpMouseInWindow(s.window, window_dims.w - edge_width, e.motion.y);
+                        }
+                        if (e.motion.y + edge_width > window_dims.h) {
+                            SDL_WarpMouseInWindow(s.window, e.motion.x, edge_width);
+                        }
+                        if (e.motion.y - edge_width < 0) {
+                            SDL_WarpMouseInWindow(s.window, e.motion.x, window_dims.h - edge_width);
+                        }
+                    }
+                } else if (e.type == SDL_WINDOWEVENT) {
+                    window_dims = sdl::window_size(s.window);
+                    glViewport(0, 0, window_dims.w, window_dims.h);
+                } else if (e.type == SDL_MOUSEWHEEL) {
+                    if (e.wheel.y > 0 and radius >= 0.1f) {
+                        radius *= wheel_sensitivity;
+                    }
+
+                    if (e.wheel.y <= 0 and radius < 100.0f) {
+                        radius /= wheel_sensitivity;
+                    }
+                }
+            }
+        }
+    }
+}
+
 int main() {
     auto ui = ui::State{};
-    examples::fractal::show(ui);
-    examples::cube::show(ui);
-    examples::geom::show(ui);
+    examples::imgui::show(ui);
+    //examples::imgui::show(ui);
+    //examples::fractal::show(ui);
+    //examples::cube::show(ui);
+    //examples::geom::show(ui);
     return 0;
 };

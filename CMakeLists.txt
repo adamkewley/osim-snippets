@@ -4,22 +4,22 @@ project(osimsnippets)
 
 set(CMAKE_CXX_STANDARD 20)
 
-set(OPENSIM_INSTALL /Users/akewley/Desktop/opensim-core/osc-debug-install)
-set(SIMBODY_INSTALL /Users/akewley/Desktop/opensim-core/osc-deps-debug-install/simbody)
+set(OPENSIM_INSTALL ~/Desktop/opensim-core/opensim-core-install)
+set(SIMBODY_INSTALL ~/Desktop/opensim-core/opensim-dependencies-install/simbody)
 set(ALL_INCLUDES
   ${OPENSIM_INSTALL}/include
   ${SIMBODY_INSTALL}/include/simbody
   ${OPENSIM_INSTALL}/include/OpenSim)
 set(LIB_DIR ${OPENSIM_INSTALL}/lib)
 set(ALL_LIBS
-  SimTKcommon_d
-  SimTKmath_d
-  SimTKsimbody_d
-  osimCommon_d
-  osimActuators_d
-  osimAnalyses_d
-  osimSimulation_d
-  osimTools_d)
+  SimTKcommon
+  SimTKmath
+  SimTKsimbody
+  osimCommon
+  osimActuators
+  osimAnalyses
+  osimSimulation
+  osimTools)
 
 add_executable(size_of_objects src/size_of_objects.cpp)
 target_include_directories(size_of_objects PUBLIC ${ALL_INCLUDES})
@@ -45,10 +45,22 @@ find_package(OpenGL REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_ttf REQUIRED)
 find_package(GLEW REQUIRED)
-#find_package(GLUT REQUIRED)
+find_package(GLUT REQUIRED)
 find_package(glm REQUIRED)
 
-add_executable(opensim_show src/opensim_show.cpp src/stb_image.h src/opensim_wrapper.hpp src/opensim_wrapper.cpp)
+add_executable(opensim_show
+    src/opensim_show.cpp
+    src/stb_image.h
+    src/opensim_wrapper.hpp
+    src/opensim_wrapper.cpp
+
+    imgui/imgui.cpp
+    imgui/imgui_draw.cpp
+    imgui/imgui_widgets.cpp
+    imgui/examples/imgui_impl_opengl3.cpp
+    imgui/examples/imgui_impl_sdl.cpp
+    imgui/imgui_demo.cpp
+    )
 target_include_directories(opensim_show PUBLIC
     ${ALL_INCLUDES}
     ${OPENGL_INCLUDE_DIR}
@@ -58,6 +70,7 @@ target_include_directories(opensim_show PUBLIC
     ${GLEW_INCLUDE_DIRS}
     ${GLUT_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
+    imgui/
 )
 target_link_directories(opensim_show PUBLIC
     ${LIB_DIR}
@@ -70,7 +83,7 @@ target_link_libraries(opensim_show
     ${SDL2_TTF_LIBRARIES}
     ${GLEW_LIBRARIES}
     ${GLUT_LIBRARIES}
-    GLEW::glew_s
-    glm::glm
+#    GLEW::glew_s
+#    glm::glm
 #    GLUT::GLUT
 )
