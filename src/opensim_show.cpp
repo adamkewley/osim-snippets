@@ -36,12 +36,11 @@ template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 static char const* files[] = {
-    "/home/adam/Desktop/osim-snippets/opensim-models/Models/Arm26/arm26.osim",
-    "/home/adam/Desktop/osim-snippets/opensim-models/Models/BouncingBlock/bouncing_block.osim"
+    "Arm26/arm26.osim",
 };
-static char fantastque_font_path[] = "/home/adam/Desktop/osim-snippets/FantasqueSansMono-Regular.ttf";
-static char container_jpeg_path[] = "/home/adam/Desktop/osim-snippets/container.jpg";
-static char awesomeface_path[] = "/home/adam/Desktop/osim-snippets/awesomeface.png";
+static char fantastque_font_path[] = "FantasqueSansMono-Regular.ttf";
+static char container_jpeg_path[] = "container.jpg";
+static char awesomeface_path[] = "awesomeface.png";
 
 namespace sdl {
     class Surface final {
@@ -685,16 +684,27 @@ namespace stbigl {
     }
 }
 
+#if __APPLE__
+    static const char* glsl_version = "#version 150";
+#else
+    static const char* glsl_version = "#version 130";
+#endif
+
 namespace ui {
     sdl::Window init_gl_window(sdl::Context&) {
 #if __APPLE__
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+    // GL 3.2 Core + GLSL 150
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
 #else
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+    // GL 3.0 + GLSL 130
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #endif
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
@@ -883,7 +893,7 @@ namespace examples::fractal {
 
         SDL_Event e;
         for (;;) {
-            glClear(GL_COLOR_BUFFER_BIT);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glEnableClientState(GL_VERTEX_ARRAY);
             gl::UseProgram(p.program);
             gl::Uniform(p.x_rescale, 3.5/2.0);
@@ -2215,6 +2225,7 @@ namespace examples::imgui {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  // when shrinking textures
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);  // when magnifying textures
         glPointSize(5.0f);
+        glLineWidth(20.0f);
 
         bool wireframe_mode = false;
         ScreenDims window_dims = sdl::window_size(s.window);
@@ -2237,7 +2248,7 @@ namespace examples::imgui {
 
         ig::Context imgui_ctx{};
         ig::SDL2_Context imgui_sdl2_ctx(s.window, s.gl);
-        ig::OpenGL3_Context imgui_ogl3_ctx{"#version 130"};
+        ig::OpenGL3_Context imgui_ogl3_ctx{glsl_version};
 
         ImGui::StyleColorsLight();
 
@@ -2358,7 +2369,6 @@ namespace examples::imgui {
             }
 
             for (auto& l : ms.lines) {
-                glLineWidth(5.0f);
                 gl::BindVertexArray(l.vao);
                 glglm::Uniform(gls.rgba, l.data.rgba);
                 glglm::Uniform(gls.modelMat, glm::identity<glm::mat4>());
@@ -2477,9 +2487,8 @@ namespace examples::imgui {
 int main() {
     auto ui = ui::State{};
     examples::imgui::show(ui);
-    //examples::imgui::show(ui);
-    //examples::fractal::show(ui);
-    //examples::cube::show(ui);
-    //examples::geom::show(ui);
+    examples::fractal::show(ui);
+    examples::cube::show(ui);
+    examples::geom::show(ui);
     return 0;
 };

@@ -12,14 +12,14 @@ set(ALL_INCLUDES
   ${OPENSIM_INSTALL}/include/OpenSim)
 set(LIB_DIR ${OPENSIM_INSTALL}/lib)
 set(ALL_LIBS
-  SimTKcommon
-  SimTKmath
-  SimTKsimbody
-  osimCommon
-  osimActuators
-  osimAnalyses
-  osimSimulation
-  osimTools)
+  SimTKcommon_d
+  SimTKmath_d
+  SimTKsimbody_d
+  osimCommon_d
+  osimActuators_d
+  osimAnalyses_d
+  osimSimulation_d
+  osimTools_d)
 
 add_executable(size_of_objects src/size_of_objects.cpp)
 target_include_directories(size_of_objects PUBLIC ${ALL_INCLUDES})
@@ -83,7 +83,27 @@ target_link_libraries(opensim_show
     ${SDL2_TTF_LIBRARIES}
     ${GLEW_LIBRARIES}
     ${GLUT_LIBRARIES}
-#    GLEW::glew_s
-#    glm::glm
+    GLEW::glew_s
+    glm::glm
 #    GLUT::GLUT
 )
+add_custom_command(
+    TARGET
+    opensim_show
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/FantasqueSansMono-Regular.ttf $<TARGET_FILE_DIR:opensim_show>)
+add_custom_command(
+    TARGET
+    opensim_show
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/container.jpg $<TARGET_FILE_DIR:opensim_show>)
+add_custom_command(
+    TARGET
+    opensim_show
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/awesomeface.png $<TARGET_FILE_DIR:opensim_show>)
+add_custom_command(
+    TARGET
+    opensim_show
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/opensim-models/Models/Arm26 $<TARGET_FILE_DIR:opensim_show>/Arm26)
