@@ -4,49 +4,50 @@ project(osimsnippets)
 
 set(CMAKE_CXX_STANDARD 20)
 
-set(OPENSIM_INSTALL ~/Desktop/opensim-core/opensim-core-install)
-set(SIMBODY_INSTALL ~/Desktop/opensim-core/opensim-dependencies-install/simbody)
-set(ALL_INCLUDES
-  ${OPENSIM_INSTALL}/include
-  ${SIMBODY_INSTALL}/include/simbody
-  ${OPENSIM_INSTALL}/include/OpenSim)
-set(LIB_DIR ${OPENSIM_INSTALL}/lib)
-set(ALL_LIBS
-  SimTKcommon_d
-  SimTKmath_d
-  SimTKsimbody_d
-  osimCommon_d
-  osimActuators_d
-  osimAnalyses_d
-  osimSimulation_d
-  osimTools_d)
-
-add_executable(size_of_objects src/size_of_objects.cpp)
-target_include_directories(size_of_objects PUBLIC ${ALL_INCLUDES})
-target_link_directories(size_of_objects PUBLIC ${LIB_DIR})
-target_link_libraries(size_of_objects ${ALL_LIBS})
-
-add_executable(study_simbody_4_pendulum src/study_simbody_4_pendulum.cpp)
-target_include_directories(study_simbody_4_pendulum PUBLIC ${ALL_INCLUDES})
-target_link_directories(study_simbody_4_pendulum PUBLIC ${LIB_DIR})
-target_link_libraries(study_simbody_4_pendulum ${ALL_LIBS})
-
-add_executable(experiment_wrapping_surfs src/experiment_wrapping_surfs.cpp)
-target_include_directories(experiment_wrapping_surfs PUBLIC ${ALL_INCLUDES})
-target_link_directories(experiment_wrapping_surfs PUBLIC ${LIB_DIR})
-target_link_libraries(experiment_wrapping_surfs ${ALL_LIBS})
-
-add_executable(show_model src/show_model.cpp)
-target_include_directories(show_model PUBLIC ${ALL_INCLUDES})
-target_link_directories(show_model PUBLIC ${LIB_DIR})
-target_link_libraries(show_model ${ALL_LIBS})
-
 find_package(OpenGL REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SDL2_ttf REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(GLUT REQUIRED)
 find_package(glm REQUIRED)
+find_package(Simbody REQUIRED)
+find_package(OpenSim REQUIRED)
+
+add_executable(size_of_objects src/size_of_objects.cpp)
+target_include_directories(size_of_objects PUBLIC
+    ${OpenSim_INCLUDE_DIRS}
+    ${Simbody_INCLUDE_DIR}
+    ${OpenSim_INCLUDE_DIRS}/OpenSim)
+target_link_libraries(size_of_objects
+    ${OpenSim_LIBRARIES}
+    ${Simbody_LIBRARIES})
+
+add_executable(study_simbody_4_pendulum src/study_simbody_4_pendulum.cpp)
+target_include_directories(study_simbody_4_pendulum PUBLIC
+    ${OpenSim_INCLUDE_DIRS}
+    ${Simbody_INCLUDE_DIR}
+    ${OpenSim_INCLUDE_DIRS}/OpenSim)
+target_link_libraries(study_simbody_4_pendulum
+    ${OpenSim_LIBRARIES}
+    ${Simbody_LIBRARIES})
+
+add_executable(experiment_wrapping_surfs src/experiment_wrapping_surfs.cpp)
+target_include_directories(experiment_wrapping_surfs PUBLIC
+    ${OpenSim_INCLUDE_DIRS}
+    ${Simbody_INCLUDE_DIR}
+    ${OpenSim_INCLUDE_DIRS}/OpenSim)
+target_link_libraries(experiment_wrapping_surfs
+    ${OpenSim_LIBRARIES}
+    ${Simbody_LIBRARIES})
+
+add_executable(show_model src/show_model.cpp)
+target_include_directories(show_model PUBLIC
+    ${OpenSim_INCLUDE_DIRS}
+    ${Simbody_INCLUDE_DIR}
+    ${OpenSim_INCLUDE_DIRS}/OpenSim)
+target_link_libraries(show_model
+    ${OpenSim_LIBRARIES}
+    ${Simbody_LIBRARIES})
 
 add_executable(opensim_show
     src/opensim_show.cpp
@@ -62,7 +63,8 @@ add_executable(opensim_show
     imgui/imgui_demo.cpp
     )
 target_include_directories(opensim_show PUBLIC
-    ${ALL_INCLUDES}
+    ${OpenSim_INCLUDE_DIRS}
+    ${Simbody_INCLUDE_DIR}
     ${OPENGL_INCLUDE_DIR}
     ${SDL2_INCLUDE_DIR}
     ${SDL2_INCLUDE_DIRS}
@@ -73,9 +75,12 @@ target_include_directories(opensim_show PUBLIC
     imgui/
 )
 target_link_directories(opensim_show PUBLIC
-    ${LIB_DIR}
+    ${OPENSIM_LIB_DIR}
+    ${SIMBODY_LIB_DIR}
 )
 target_link_libraries(opensim_show
+    ${OpenSim_LIBRARIES}
+    ${Simbody_LIBRARIES}
     ${ALL_LIBS}
     ${OPENGL_LIBRARIES}
     ${SDL2_LIBRARIES}
@@ -85,7 +90,6 @@ target_link_libraries(opensim_show
     ${GLUT_LIBRARIES}
     GLEW::glew_s
     glm::glm
-#    GLUT::GLUT
 )
 add_custom_command(
     TARGET
