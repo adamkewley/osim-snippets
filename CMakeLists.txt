@@ -88,8 +88,8 @@ target_link_libraries(opensim_show
     ${SDL2_TTF_LIBRARIES}
     ${GLEW_LIBRARIES}
     ${GLUT_LIBRARIES}
-    GLEW::glew_s
-    glm::glm
+#    GLEW::glew_s
+#    glm::glm
 )
 add_custom_command(
     TARGET

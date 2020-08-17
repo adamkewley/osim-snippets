@@ -2500,7 +2500,7 @@ namespace examples::imgui {
                 auto hacky_cylinder_correction =
                         glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{1.0f, 0.0f, 0.0f});
                 auto scale = glm::scale(glm::identity<glm::mat4>(), c.scale);
-                glglm::Uniform(gls.modelMat, c.transform * scale * hacky_cylinder_correction * scalez);
+                glglm::Uniform(gls.modelMat, c.transform * scale * hacky_cylinder_correction * scalez); 
                 glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
                 gl::BindVertexArray();
             }
