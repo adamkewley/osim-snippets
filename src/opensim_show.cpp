@@ -41,6 +41,7 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 static char const* files[] = {
     "Arm26/arm26.osim",
+    "RajagopalModel/Rajagopal2015.osim",
 };
 static char fantastque_font_path[] = "FantasqueSansMono-Regular.ttf";
 static char container_jpeg_path[] = "container.jpg";
@@ -820,10 +821,8 @@ namespace ui {
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
         SDL_GL_SetSwapInterval(1);  // vsync
-
-        //SDL_SetRelativeMouseMode(SDL_TRUE);
-        //SDL_CaptureMouse(SDL_TRUE);
 
         return sdl::Window{
                 "Model Visualizer",
@@ -1994,6 +1993,7 @@ namespace examples::imgui {
         }
     )";
 
+    // Vector of 3 floats with no padding, so that it can be passed to OpenGL
     struct Vec3 {
         GLfloat x;
         GLfloat y;
@@ -2005,7 +2005,8 @@ namespace examples::imgui {
         Vec3 normal;
     };
 
-    std::vector<Mesh_point> unit_sphere() {
+    // Returns triangles of a "unit" (radius = 1.0f, origin = 0,0,0) sphere
+    std::vector<Mesh_point> unit_sphere_triangles() {
         // this is a shitty alg that produces a shitty UV sphere. I don't have
         // enough time to implement something better, like an isosphere, or
         // something like a patched sphere:
@@ -2074,12 +2075,17 @@ namespace examples::imgui {
         return triangles;
     }
 
-
-    // dumb alg. for producing a unit (radius = 1.0, height = 1.0) cylinder
+    // Returns triangles for a "unit" cylinder with `num_sides` sides.
     //
-    // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
-    //       would reduce the amount of vertices needed
-    std::vector<Mesh_point> unit_cylinder_mesh(unsigned num_sides) {
+    // Here, "unit" means:
+    //
+    // - radius == 1.0f
+    // - top == [0.0f, 0.0f, -1.0f]
+    // - bottom == [0.0f, 0.0f, +1.0f]
+    // - (so the height is 2.0f, not 1.0f)
+    std::vector<Mesh_point> unit_cylinder_triangles(unsigned num_sides) {
+        // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
+        //       would reduce the amount of vertices needed
         if (num_sides < 3) {
             throw std::runtime_error{"cannot create a cylinder with fewer than 3 sides"};
         }
@@ -2088,8 +2094,8 @@ namespace examples::imgui {
         rv.reserve(2*3*num_sides + 6*num_sides);
 
         float step_angle = (2*M_PI)/num_sides;
-        float top_z = -0.5f;
-        float bottom_z = +0.5f;
+        float top_z = -1.0f;
+        float bottom_z = +1.0f;
 
         // top
         {
@@ -2181,6 +2187,7 @@ namespace examples::imgui {
         return rv;
     }
 
+    // Basic mesh composed of triangles with normals for all vertices
     struct Triangle_mesh {
         unsigned num_verts;
         gl::Array_buffer vbo;
@@ -2203,21 +2210,20 @@ namespace examples::imgui {
         }
     };
 
-    Triangle_mesh make_cylinder(gl::Attribute& in_attr,
-                                gl::Attribute& normal_attr,
-                                unsigned num_sides) {
-
-        auto points = unit_cylinder_mesh(num_sides);
+    Triangle_mesh gen_cylinder_mesh(gl::Attribute& in_attr,
+                                    gl::Attribute& normal_attr,
+                                    unsigned num_sides) {
+        auto points = unit_cylinder_triangles(num_sides);
         return Triangle_mesh{in_attr, normal_attr, points};
     }
 
-    Triangle_mesh make_sphere(gl::Attribute& in_attr,
-                              gl::Attribute& normal_attr) {
-        auto points = unit_sphere();
+    Triangle_mesh gen_sphere_mesh(gl::Attribute& in_attr,
+                                  gl::Attribute& normal_attr) {
+        auto points = unit_sphere_triangles();
         return Triangle_mesh{in_attr, normal_attr, points};
     }
 
-    struct GLState {
+    struct App_static_glstate {
         gl::Program program;
 
         gl::UniformMatrix4fv projMat;
@@ -2235,9 +2241,7 @@ namespace examples::imgui {
         Triangle_mesh sphere;
     };
 
-    GLState initialize() {
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-
+    App_static_glstate initialize() {
         auto program = gl::Program{};
         auto vertex_shader = gl::Vertex_shader::Compile(vertex_shader_src);
         gl::AttachShader(program, vertex_shader);
@@ -2257,7 +2261,7 @@ namespace examples::imgui {
         auto in_position = gl::Attribute{program, "location"};
         auto in_normal = gl::Attribute{program, "in_normal"};
 
-        return GLState {
+        return App_static_glstate {
             .program = std::move(program),
 
             .projMat = std::move(projMat),
@@ -2271,8 +2275,8 @@ namespace examples::imgui {
             .location = std::move(in_position),
             .in_normal = std::move(in_normal),
 
-            .cylinder = make_cylinder(in_position, in_normal, 24),
-            .sphere = make_sphere(in_position, in_normal),
+            .cylinder = gen_cylinder_mesh(in_position, in_normal, 24),
+            .sphere = gen_sphere_mesh(in_position, in_normal),
         };
     }
 
@@ -2339,7 +2343,7 @@ namespace examples::imgui {
         std::vector<Osim_mesh> meshes;
     };
 
-    ModelState load_model(GLState& gls, char const* path) {
+    ModelState load_model(App_static_glstate& gls, std::string_view path) {
         ModelState rv;
         for (osim::Geometry const& g : osim::geometry_in(path)) {
             std::visit(overloaded {
@@ -2380,14 +2384,14 @@ namespace examples::imgui {
         return ss.str();
     }
 
-    struct ModelWatcher {
+    struct FileChangeWatcher {
         std::string path;
         std::string prev_content;
         std::atomic<bool> stop = false;
         std::thread watcher_thread;
         std::atomic<bool> changed = false;
 
-        ModelWatcher(std::string _path) :
+        FileChangeWatcher(std::string _path) :
             path{std::move(_path)},
             prev_content{slurp_file(path)},
             watcher_thread([&]() {
@@ -2403,10 +2407,23 @@ namespace examples::imgui {
                         continue;
                     }
 
+                    if (stop) {
+                        return;
+                    }
+
                     changed = true;
                     prev_content = new_content;
                 }
             })  {
+        }
+
+        FileChangeWatcher(FileChangeWatcher const&) = delete;
+        FileChangeWatcher(FileChangeWatcher&&) = delete;
+        FileChangeWatcher& operator=(FileChangeWatcher&) = delete;
+        FileChangeWatcher& operator=(FileChangeWatcher&&) = delete;
+        ~FileChangeWatcher() noexcept {
+            stop = true;
+            watcher_thread.join();
         }
 
         bool did_change() {
@@ -2415,25 +2432,39 @@ namespace examples::imgui {
         }
     };
 
-    void show(ui::State& s) {
-        GLState gls = initialize();
-
+    void show(ui::State& s, std::string file) {
+        // OpenGL
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_ALPHA_TEST);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_BLEND);
-        // glEnable(GL_FRAMEBUFFER_SRGB); gamma correction
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  // when shrinking textures
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);  // when magnifying textures
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        // ImGUI
+        auto imgui_ctx = ig::Context{};
+        auto imgui_sdl2_ctx = ig::SDL2_Context{s.window, s.gl};
+        auto imgui_ogl3_ctx = ig::OpenGL3_Context{glsl_version};
+        ImGui::StyleColorsLight();
+        ImGuiIO& io = ImGui::GetIO();
+
+
+        // Unchanging OpenGL state (which programs are used, uniforms, etc.)
+        App_static_glstate gls = initialize();
+
+
+        // Mutable runtime state
+        auto watcher = FileChangeWatcher{file};
+        ModelState ms = load_model(gls, file);
 
         bool wireframe_mode = false;
         ScreenDims window_dims = sdl::window_size(s.window);
         float radius = 1.0f;
         float wheel_sensitivity = 0.9f;
-        float line_width = 1.0f;
+        float line_width = 0.002f;
 
         float fov = 120.0f;
 
@@ -2445,26 +2476,49 @@ namespace examples::imgui {
         bool panning = false;
         glm::vec3 pan = {0.0f, 0.0f, 0.0f};
 
+        // initial pan position is the average center of *some of the* geometry
+        // in the scene, which is found in an extremely dumb way.
+        {
+            glm::vec3 middle = {0.0f, 0.0f, 0.0f};
+            unsigned n = 0;
+            auto update_middle = [&](glm::vec3 const& v) {
+                middle = glm::vec3{
+                    (n*middle.x - v.x)/(n+1),
+                    (n*middle.y - v.y)/(n+1),
+                    (n*middle.z - v.z)/(n+1)
+                };
+                ++n;
+            };
+
+            for (auto const& l : ms.lines) {
+                update_middle(l.data.p1);
+                update_middle(l.data.p2);
+            }
+
+            for (auto const& p : ms.spheres) {
+                glm::vec3 translation = {p.transform[3][0], p.transform[3][1], p.transform[3][2]};
+                update_middle(translation);
+            }
+
+            pan = middle;
+        }
+
         auto light_pos = glm::vec3{1.0f, 1.0f, 0.0f};
         float light_color[3] = {0.98f, 0.95f, 0.95f};
         bool show_light = false;
         bool show_unit_cylinder = false;
-
-        auto imgui_ctx = ig::Context{};
-        auto imgui_sdl2_ctx = ig::SDL2_Context{s.window, s.gl};
-        auto imgui_ogl3_ctx = ig::OpenGL3_Context{glsl_version};
-
-        ImGui::StyleColorsLight();
-
-        auto watcher = ModelWatcher{files[0]};
-        ModelState ms = load_model(gls, files[0]);
+        bool gamma_correction = false;
 
         while (true) {
             if (watcher.did_change()) {
-                ms = load_model(gls, files[0]);
+                ms = load_model(gls, file);
             }
 
-            glLineWidth(line_width);
+            if (gamma_correction) {
+                glEnable(GL_FRAMEBUFFER_SRGB);
+            } else {
+                glDisable(GL_FRAMEBUFFER_SRGB);
+            }
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
@@ -2496,11 +2550,12 @@ namespace examples::imgui {
             for (auto const& c : ms.cylinders) {
                 gl::BindVertexArray(gls.cylinder.vao);
                 glglm::Uniform(gls.rgba, c.rgba);
-                auto scalez = glm::scale(glm::identity<glm::mat4>(), glm::vec3{1.0f, 1.0f, 2.0f});
-                auto hacky_cylinder_correction =
-                        glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{1.0f, 0.0f, 0.0f});
-                auto scale = glm::scale(glm::identity<glm::mat4>(), c.scale);
-                glglm::Uniform(gls.modelMat, c.transform * scale * hacky_cylinder_correction * scalez);
+
+                // simbody defines a cylinder's top+bottom as +Y/-Y
+                auto hacky_cylinder_correction = glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{1.0f, 0.0f, 0.0f});
+
+                auto scaler = glm::scale(c.transform, c.scale);
+                glglm::Uniform(gls.modelMat, scaler * hacky_cylinder_correction);
                 glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
                 gl::BindVertexArray();
             }
@@ -2515,18 +2570,31 @@ namespace examples::imgui {
             }
 
             for (auto& l : ms.lines) {
-                // lines are just cylinders that have been xformed appropriately.
-                gl::BindVertexArray(l.vao);
+                gl::BindVertexArray(gls.cylinder.vao);
+                //gl::BindVertexArray(l.vao);
+
+                // color
                 glglm::Uniform(gls.rgba, l.data.rgba);
-                glglm::Uniform(gls.modelMat, glm::identity<glm::mat4>());
-                glDrawArrays(GL_LINES, 0, 2);
+
+                glm::vec3 p1_to_p2 = l.data.p2 - l.data.p1;
+                glm::vec3 c1_to_c2 = glm::vec3{0.0f, 0.0f, 2.0f};
+                auto rotation =
+                        glm::rotate(glm::identity<glm::mat4>(),
+                                    glm::acos(glm::dot(glm::normalize(c1_to_c2), glm::normalize(p1_to_p2))),
+                                    glm::cross(glm::normalize(c1_to_c2), glm::normalize(p1_to_p2)));
+                float scale = glm::length(p1_to_p2)/glm::length(c1_to_c2);
+                auto scale_xform = glm::scale(glm::identity<glm::mat4>(), glm::vec3{line_width, line_width, scale});
+                auto translation = glm::translate(glm::identity<glm::mat4>(), l.data.p1 + p1_to_p2/2.0f);
+
+                glglm::Uniform(gls.modelMat, translation * rotation * scale_xform);
+                glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
+                //glDrawArrays(GL_LINES, 0, 2);
                 gl::BindVertexArray();
             }
 
             for (auto& m : ms.meshes) {
                 gl::BindVertexArray(m.mesh.vao);
-                // TODO: don't hack alpha...
-                glglm::Uniform(gls.rgba, glm::vec4{m.data.rgba.r, m.data.rgba.g, m.data.rgba.b, 0.8f});
+                glglm::Uniform(gls.rgba, m.data.rgba);
                 auto scaler = glm::scale(m.data.transform, m.data.scale);
                 glglm::Uniform(gls.modelMat, scaler);
                 glDrawArrays(GL_TRIANGLES, 0, m.mesh.num_verts);
@@ -2536,14 +2604,13 @@ namespace examples::imgui {
             // draw lamp
             if (show_light) {
                 gl::BindVertexArray(gls.sphere.vao);
-                glglm::Uniform(gls.rgba, glm::vec4{1.0f, 1.0f, 0.0f, 0.7f});
+                glglm::Uniform(gls.rgba, glm::vec4{1.0f, 1.0f, 0.0f, 0.3f});
                 glglm::Uniform(gls.modelMat, glm::scale(glm::translate(glm::identity<glm::mat4>(), light_pos), {0.05, 0.05, 0.05}));
                 glDrawArrays(GL_TRIANGLES, 0 , gls.sphere.num_verts);
                 gl::BindVertexArray();
             }
 
             if (show_unit_cylinder) {
-                // TODO: draw cylinder
                 gl::BindVertexArray(gls.cylinder.vao);
                 glglm::Uniform(gls.rgba, glm::vec4{0.9f, 0.9f, 0.9f, 1.0f});
                 glglm::Uniform(gls.modelMat, glm::identity<glm::mat4>());
@@ -2562,18 +2629,26 @@ namespace examples::imgui {
             //ImGui::ShowDemoWindow(&b);
             ImGui::Begin("Scene", &b, ImGuiWindowFlags_MenuBar);
 
-            ImGui::Text("Camera Position");
-            ImGui::SliderFloat("radius", &radius, 0.0f, 10.0f);
-            ImGui::SliderFloat("theta", &theta, 0.0f, 2*M_PI);
-            ImGui::SliderFloat("phi", &phi, 0.0f, 2*M_PI);
+            {
+                std::stringstream fps;
+                fps << "Fps: " << io.Framerate;
+                ImGui::Text(fps.str().c_str());
+            }
+            ImGui::NewLine();
+
+            ImGui::Text("Camera Position:");
+
+            ImGui::NewLine();
 
             if (ImGui::Button("Front")) {
-                theta = 0.0f;
+                // assumes models tend to point upwards in Y and forwards in +X
+                theta = M_PI/2.0f;
                 phi = 0.0f;
             }
             ImGui::SameLine();
             if (ImGui::Button("Back")) {
-                theta = M_PI;
+                // assumes models tend to point upwards in Y and forwards in +X
+                theta = 3.0f * (M_PI/2.0f);
                 phi = 0.0f;
             }
 
@@ -2582,12 +2657,16 @@ namespace examples::imgui {
             ImGui::SameLine();
 
             if (ImGui::Button("Left")) {
-                theta = M_PI/2.0f;
+                // assumes models tend to point upwards in Y and forwards in +X
+                // (so sidewards is theta == 0 or PI)
+                theta = M_PI;
                 phi = 0.0f;
             }
             ImGui::SameLine();
             if (ImGui::Button("Right")) {
-                theta = 3.0f*(M_PI/2.0f);
+                // assumes models tend to point upwards in Y and forwards in +X
+                // (so sidewards is theta == 0 or PI)
+                theta = 0.0f;
                 phi = 0.0f;
             }
 
@@ -2605,14 +2684,36 @@ namespace examples::imgui {
                 phi = 3.0f*(M_PI/2.0f);
             }
 
+            ImGui::NewLine();
+
+            ImGui::SliderFloat("radius", &radius, 0.0f, 10.0f);
+            ImGui::SliderFloat("theta", &theta, 0.0f, 2*M_PI);
+            ImGui::SliderFloat("phi", &phi, 0.0f, 2*M_PI);
+            ImGui::NewLine();
+            ImGui::SliderFloat("pan_x", &pan.x, -100.0f, 100.0f);
+            ImGui::SliderFloat("pan_y", &pan.y, -100.0f, 100.0f);
+            ImGui::SliderFloat("pan_z", &pan.z, -100.0f, 100.0f);
+
+            ImGui::NewLine();
             ImGui::Text("Lighting:");
             ImGui::SliderFloat("light_x", &light_pos.x, -30.0f, 30.0f);
             ImGui::SliderFloat("light_y", &light_pos.y, -30.0f, 30.0f);
             ImGui::SliderFloat("light_z", &light_pos.z, -30.0f, 30.0f);
-            ImGui::ColorEdit3("color", light_color);
+            ImGui::ColorEdit3("light_color", light_color);
             ImGui::Checkbox("show_light", &show_light);
             ImGui::Checkbox("show_unit_cylinder", &show_unit_cylinder);
-            ImGui::SliderFloat("line_width", &line_width, 0.0f, 20.0f);
+            ImGui::SliderFloat("line_width", &line_width, 0.0f, 0.01f);
+            ImGui::Checkbox("gamma_correction", &gamma_correction);
+
+            ImGui::NewLine();
+            ImGui::Text("Interaction:");
+            if (dragging) {
+                ImGui::Text("rotating");
+            }
+            if (panning) {
+                ImGui::Text("panning");
+            }
+
 
             ImGui::End();
 
@@ -2638,7 +2739,7 @@ namespace examples::imgui {
                     }
                 } else if (e.type == SDL_MOUSEBUTTONDOWN) {
                     switch (e.button.button) {
-                        case SDL_BUTTON_MIDDLE:
+                        case SDL_BUTTON_LEFT:
                             dragging = true;
                             break;
                         case SDL_BUTTON_RIGHT:
@@ -2647,7 +2748,7 @@ namespace examples::imgui {
                     }
                 } else if (e.type == SDL_MOUSEBUTTONUP) {
                     switch (e.button.button) {
-                        case SDL_BUTTON_MIDDLE:
+                        case SDL_BUTTON_LEFT:
                             dragging = false;
                             break;
                         case SDL_BUTTON_RIGHT:
@@ -2655,6 +2756,19 @@ namespace examples::imgui {
                             break;
                     }
                 } else if (e.type == SDL_MOUSEMOTION) {
+                    if (io.WantCaptureMouse) {
+                        // if ImGUI wants to capture the mouse, then the mouse
+                        // is probably interacting with an ImGUI panel and,
+                        // therefore, the dragging/panning shouldn't be handled
+                        continue;
+                    }
+
+                    if (abs(e.motion.xrel) > 200 or abs(e.motion.yrel) > 200) {
+                        // probably a frameskip or the mouse was forcibly teleported
+                        // because it hit the edge of the screen
+                        continue;
+                    }
+
                     if (dragging) {
                         // alter camera position while dragging
                         float dx = -static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
@@ -2721,7 +2835,9 @@ namespace examples::imgui {
 
 int main() {
     auto ui = ui::State{};
-    examples::imgui::show(ui);
+    for (auto file : files) {
+        examples::imgui::show(ui, file);
+    }
     //examples::fractal::show(ui);
     //examples::cube::show(ui);
     //examples::geom::show(ui);

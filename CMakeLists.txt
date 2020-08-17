@@ -111,3 +111,8 @@ add_custom_command(
     opensim_show
     PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/opensim-models/Models/Arm26 $<TARGET_FILE_DIR:opensim_show>/Arm26)
+add_custom_command(
+    TARGET
+    opensim_show
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/opensim-models/Models/RajagopalModel $<TARGET_FILE_DIR:opensim_show>/RajagopalModel)
