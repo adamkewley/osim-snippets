@@ -1,4 +1,5 @@
 ﻿#include <SDL.h>
+#undef main
 #include "opensim_wrapper.hpp"
 
 #include <SDL_ttf.h>
