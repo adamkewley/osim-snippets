@@ -13,6 +13,7 @@ find_package(GLEW REQUIRED)
 find_package(GLUT REQUIRED)
 find_package(glm REQUIRED)
 find_package(OpenSim REQUIRED)
+find_package(Simbody REQUIRED)
 
 
 # INTERFACE target that transitively sets common compiler options on any
@@ -23,14 +24,16 @@ target_compile_options(snippets_common_options INTERFACE
     # - specifically, this enables the use of 'and', 'not', etc.
     $<$<CXX_COMPILER_ID:MSVC>:/permissive->
 )
-target_include_directories(snippets_common_options INTERFACE
-    ${OpenSim_INCLUDE_DIRS}
-    ${Simbody_INCLUDE_DIR}
-    ${OpenSim_INCLUDE_DIRS}/OpenSim
-)
 target_link_libraries(snippets_common_options INTERFACE
-    ${OpenSim_LIBRARIES}
-    ${Simbody_LIBRARIES}
+    osimLepton
+    osimCommon
+    osimSimulation
+    osimActuators
+    osimAnalyses
+    osimTools
+    SimTKcommon
+    SimTKmath
+    SimTKsimbody
 )
 
 
@@ -70,6 +73,23 @@ target_link_libraries(show_model
 )
 
 
+# TARGET: simbody_cable
+add_executable(simbody_cable
+    #src/simbody_cable.cpp
+    src/OpenSimPartyDemoCable.cpp
+)
+target_link_libraries(simbody_cable
+    snippets_common_options
+)
+file(
+    COPY
+    CableOverBicubicSurfaces-femur.vtp
+    CableOverBicubicSurfaces-tibia.vtp
+
+    DESTINATION ${CMAKE_BINARY_DIR}
+)
+
+
 # TARGET: opensim_show
 add_executable(opensim_show
     src/opensim_show.cpp
@@ -103,28 +123,13 @@ target_link_libraries(opensim_show
     ${GLUT_LIBRARIES}
     snippets_common_options
 )
-add_custom_command(
-    TARGET
-    opensim_show
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/FantasqueSansMono-Regular.ttf $<TARGET_FILE_DIR:opensim_show>)
-add_custom_command(
-    TARGET
-    opensim_show
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/container.jpg $<TARGET_FILE_DIR:opensim_show>)
-add_custom_command(
-    TARGET
-    opensim_show
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/awesomeface.png $<TARGET_FILE_DIR:opensim_show>)
-add_custom_command(
-    TARGET
-    opensim_show
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/opensim-models/Models/Arm26 $<TARGET_FILE_DIR:opensim_show>/Arm26)
-add_custom_command(
-    TARGET
-    opensim_show
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/opensim-models/Models/RajagopalModel $<TARGET_FILE_DIR:opensim_show>/RajagopalModel)
+file(
+    COPY
+    ${CMAKE_SOURCE_DIR}/FantasqueSansMono-Regular.ttf
+    ${CMAKE_SOURCE_DIR}/container.jpg
+    ${CMAKE_SOURCE_DIR}/awesomeface.png
+    ${CMAKE_SOURCE_DIR}/opensim-models/Models/Arm26/
+    ${CMAKE_SOURCE_DIR}/opensim-models/Models/RajagopalModel/
+
+    DESTINATION $<TARGET_FILE_DIR:opensim_show>
+)
