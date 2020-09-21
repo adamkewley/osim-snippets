@@ -67,26 +67,38 @@ namespace {
         glm::mat4 transform(DecorativeGeometry const& geom) {
             Transform t = ground_to_decoration_xform(geom);
             glm::mat4 m = glm::identity<glm::mat4>();
+
+            // glm::mat4 is column major:
+            //     see: https://glm.g-truc.net/0.9.2/api/a00001.html
+            //     (and just Google "glm column major?")
+            //
+            // SimTK is whoknowswtf-major (actually, row), carefully read the
+            // sourcecode for `SimTK::Transform`.
+
             // x
-            m[0][0] = t.R()[0][0];
-            m[0][1] = t.R()[0][1];
-            m[0][2] = t.R()[0][2];
+            m[0][0] = t.R().row(0)[0];
+            m[0][1] = t.R().row(1)[0];
+            m[0][2] = t.R().row(2)[0];
             m[0][3] = 0.0f;
+
             // y
-            m[1][0] = t.R()[1][0];
-            m[1][1] = t.R()[1][1];
-            m[1][2] = t.R()[1][2];
+            m[1][0] = t.R().row(0)[1];
+            m[1][1] = t.R().row(1)[1];
+            m[1][2] = t.R().row(2)[1];
             m[1][3] = 0.0f;
+
             // z
-            m[2][0] = t.R()[2][0];
-            m[2][1] = t.R()[2][1];
-            m[2][2] = t.R()[2][2];
+            m[2][0] = t.R().row(0)[2];
+            m[2][1] = t.R().row(1)[2];
+            m[2][2] = t.R().row(2)[2];
             m[2][3] = 0.0f;
+
             // w
             m[3][0] = t.p()[0];
             m[3][1] = t.p()[1];
             m[3][2] = t.p()[2];
             m[3][3] = 1.0f;
+
             return m;
         }
 

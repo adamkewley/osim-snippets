@@ -793,7 +793,7 @@ namespace  osim {
     }
 }
 
-#if __APPLE__
+#ifdef __APPLE__
     static const char* glsl_version = "#version 150";
 #else
     static const char* glsl_version = "#version 130";
@@ -801,7 +801,7 @@ namespace  osim {
 
 namespace ui {
     sdl::Window init_gl_window(sdl::Context&) {
-#if __APPLE__
+#ifdef __APPLE__
     // GL 3.2 Core + GLSL 150
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -862,40 +862,32 @@ namespace examples::imgui {
     static const char vertex_shader_src[] = R"(
         #version 410
 
+        // A non-texture-mapping Gouraud shader that just adds some basic
+        // (diffuse / specular) highlights to the model
+
         uniform mat4 projMat;
         uniform mat4 viewMat;
         uniform mat4 modelMat;
-
-        in vec3 location;
-        in vec3 in_normal;
-
-        out vec3 normal;
-        out vec3 frag_pos;
-
-        void main() {
-            // apply xforms (model, view, perspective) to vertex
-            gl_Position = projMat * viewMat * modelMat * vec4(location, 1.0f);
-            // passthrough the normals (used by frag shader)
-            normal = in_normal;
-            // pass fragment pos in world coordinates to frag shader
-            frag_pos = vec3(modelMat * vec4(location, 1.0f));
-        }
-    )";
-
-    static const char frag_shader_src[] = R"(
-        #version 410
 
         uniform vec4 rgba;
         uniform vec3 lightPos;
         uniform vec3 lightColor;
         uniform vec3 viewPos;
 
-        in vec3 normal;
-        in vec3 frag_pos;
+        in vec3 location;
+        in vec3 in_normal;
 
-        out vec4 color;
+        out vec4 frag_color;
 
         void main() {
+            // apply xforms (model, view, perspective) to vertex
+            gl_Position = projMat * viewMat * modelMat * vec4(location, 1.0f);
+            // passthrough the normals (used by frag shader)
+            vec3 normal = in_normal;
+            // pass fragment pos in world coordinates to frag shader
+            vec3 frag_pos = vec3(modelMat * vec4(location, 1.0f));
+
+
             // normalized surface normal
             vec3 norm = normalize(normal);
             // direction of light, relative to fragment, in world coords
@@ -920,7 +912,23 @@ namespace examples::imgui {
             float spec = pow(max(dot(normal, halfwayDir), 0.0), 32);
             vec3 specular = specularStrength * spec * lightColor;
 
-            color = vec4((ambient + diffuse + specular) * rgba.rgb, rgba.a);
+            vec3 rgb = (ambient + diffuse + specular) * rgba.rgb;
+            frag_color = vec4(rgb, rgba.a);
+        }
+    )";
+
+    static const char frag_shader_src[] = R"(
+        #version 410
+
+        // passthrough frag shader: rendering does not use textures and we're
+        // using a "good enough" Gouraud shader (rather than a Phong shader,
+        // which is per-fragment).
+
+        in vec4 frag_color;
+        out vec4 color;
+
+        void main() {
+            color = frag_color;
         }
     )";
 
@@ -1118,6 +1126,125 @@ namespace examples::imgui {
         return rv;
     }
 
+    // Returns triangles for a "simbody" cylinder with `num_sides` sides.
+    //
+    // This matches simbody-visualizer.cpp's definition of a cylinder, which
+    // is:
+    //
+    // radius
+    //     1.0f
+    // top
+    //     [0.0f, 1.0f, 0.0f]
+    // bottom
+    //     [0.0f, -1.0f, 0.0f]
+    //
+    // see simbody-visualizer.cpp::makeCylinder for my source material
+    std::vector<Mesh_point> simbody_cylinder_triangles(unsigned num_sides) {
+        // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
+        //       would reduce the amount of vertices needed
+        if (num_sides < 3) {
+            throw std::runtime_error{"cannot create a cylinder with fewer than 3 sides"};
+        }
+
+        std::vector<Mesh_point> rv;
+        rv.reserve(2*3*num_sides + 6*num_sides);
+
+        float step_angle = (2*M_PI)/num_sides;
+        float top_y = +1.0f;
+        float bottom_y = -1.0f;
+
+        // top
+        {
+            Vec3 normal = {0.0f, 1.0f, 0.0f};
+            Mesh_point top_middle = {
+                .position = {0.0f, top_y, 0.0f},
+                .normal = normal,
+            };
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i*step_angle;
+                float theta_end = (i+1)*step_angle;
+                rv.push_back(top_middle);
+                rv.push_back(Mesh_point {
+                    .position = {
+                        .x = cos(theta_start),
+                        .y = top_y,
+                        .z = sin(theta_start),
+                    },
+                    .normal = normal,
+                });
+                rv.push_back(Mesh_point {
+                     .position = {
+                        .x = cos(theta_end),
+                        .y = top_y,
+                        .z = sin(theta_end),
+                    },
+                    .normal = normal,
+                });
+            }
+        }
+
+        // bottom
+        {
+            Vec3 bottom_normal = {0.0f, -1.0f, 0.0f};
+            Mesh_point top_middle = {
+                .position = {0.0f, bottom_y, 0.0f},
+                .normal = bottom_normal,
+            };
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i*step_angle;
+                float theta_end = (i+1)*step_angle;
+
+                rv.push_back(top_middle);
+                rv.push_back(Mesh_point {
+                    .position = {
+                        .x = cos(theta_start),
+                        .y = bottom_y,
+                        .z = sin(theta_start),
+                    },
+                    .normal = bottom_normal,
+                });
+                rv.push_back(Mesh_point {
+                     .position = {
+                        .x = cos(theta_end),
+                        .y = bottom_y,
+                        .z = sin(theta_end),
+                    },
+                    .normal = bottom_normal,
+                });
+            }
+        }
+
+        // sides
+        {
+            float norm_start = step_angle/2.0f;
+            for (auto i = 0U; i < num_sides; ++i) {
+                float theta_start = i * step_angle;
+                float theta_end = theta_start + step_angle;
+                float norm_theta = theta_start + norm_start;
+
+                Vec3 normal = {cos(norm_theta), 0.0f, sin(norm_theta)};
+                Vec3 top1 = {cos(theta_start), top_y, sin(theta_start)};
+                Vec3 top2 = {cos(theta_end), top_y, sin(theta_end)};
+
+                Vec3 bottom1 = top1;
+                bottom1.y = bottom_y;
+                Vec3 bottom2 = top2;
+                bottom2.y = bottom_y;
+
+                // draw 2 triangles per rectangular side
+                rv.push_back(Mesh_point{top1, normal});
+                rv.push_back(Mesh_point{top2, normal});
+                rv.push_back(Mesh_point{bottom1, normal});
+
+                rv.push_back(Mesh_point{bottom1, normal});
+                rv.push_back(Mesh_point{bottom2, normal});
+                rv.push_back(Mesh_point{top2, normal});
+            }
+        }
+
+        return rv;
+    }
+
     // Basic mesh composed of triangles with normals for all vertices
     struct Triangle_mesh {
         unsigned num_verts;
@@ -1144,8 +1271,11 @@ namespace examples::imgui {
     Triangle_mesh gen_cylinder_mesh(gl::Attribute& in_attr,
                                     gl::Attribute& normal_attr,
                                     unsigned num_sides) {
-        auto points = unit_cylinder_triangles(num_sides);
-        return Triangle_mesh{in_attr, normal_attr, points};
+        return Triangle_mesh{
+            in_attr,
+            normal_attr,
+            simbody_cylinder_triangles(num_sides),
+        };
     }
 
     Triangle_mesh gen_sphere_mesh(gl::Attribute& in_attr,
@@ -1320,8 +1450,9 @@ namespace examples::imgui {
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_ALPHA_TEST);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1429,11 +1560,8 @@ namespace examples::imgui {
                 gl::BindVertexArray(gls.cylinder.vao);
                 glglm::Uniform(gls.rgba, c.rgba);
 
-                // simbody defines a cylinder's top+bottom as +Y/-Y
-                auto hacky_cylinder_correction = glm::rotate(glm::identity<glm::mat4>(), static_cast<float>(M_PI/2.0f), glm::vec3{1.0f, 0.0f, 0.0f});
-
                 auto scaler = glm::scale(c.transform, c.scale);
-                glglm::Uniform(gls.modelMat, scaler * hacky_cylinder_correction);
+                glglm::Uniform(gls.modelMat, scaler);
                 glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
                 gl::BindVertexArray();
             }
