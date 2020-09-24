@@ -7,11 +7,14 @@ configure_file("${PROJECT_SOURCE_DIR}/src/OsimsnippetsConfig.h.in" "Osimsnippets
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 find_package(OpenSim REQUIRED)
-find_package(Simbody REQUIRED)
+#find_package(Simbody REQUIRED)
 
 # INTERFACE target that transitively sets common compiler options on any
 # targets that link to it

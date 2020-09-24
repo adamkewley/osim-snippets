@@ -3,7 +3,6 @@
 #include "opensim_wrapper.hpp"
 #include "OsimsnippetsConfig.h"
 
-#include <SDL_ttf.h>
 #include <GL/glew.h>
 #include <GL/glut.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -41,7 +40,7 @@ template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 // explicit deduction guide (not needed as of C++20)
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-static char rajagopal_model_path[] = "resources/opensim-models/Models/RajagopalModel/Rajagopal2015.osim";
+static char rajagopal_model_path[] = R"(C:\Users\ak\Desktop\osim-snippets\resources\opensim-models\Models\RajagopalModel\Rajagopal2015.osim)";
 
 namespace sdl {
     class Surface final {
@@ -186,6 +185,7 @@ namespace sdl {
             if (ctx == nullptr) {
                 throw std::runtime_error{"SDL_GL_CreateContext failed: "s + SDL_GetError()};
             }
+            SDL_GL_SetSwapInterval(0);  // vsync
         }
         GLContext(GLContext const&) = delete;
         GLContext(GLContext&&) = delete;
@@ -214,57 +214,6 @@ namespace sdl {
             SDL_Quit();
         }
     };
-}
-
-namespace sdl::ttf {
-    struct Context final {
-        Context() {
-            if (TTF_Init() == -1) {
-                throw std::runtime_error{"TTF_Init: failed: "s + TTF_GetError()};
-            }
-        }
-        Context(Context const&) = delete;
-        Context(Context&&) = delete;
-        Context& operator=(Context const&) = delete;
-        Context& operator=(Context&&) = delete;
-        ~Context() noexcept {
-            TTF_Quit();
-        }
-    };
-
-    class Font final {
-        TTF_Font* handle;
-
-    public:
-        Font(char const* path, int ptsize) :
-            handle{TTF_OpenFont(path, ptsize)} {
-
-            if (handle == nullptr) {
-                throw std::runtime_error{"TTF_OpenFont failed for path '"s + path + "' error = "s + TTF_GetError()};
-            }
-        }
-        Font(Font const&) = delete;
-        Font(Font&&) = delete;
-        Font& operator=(Font const&) = delete;
-        Font& operator=(Font&&) = delete;
-        ~Font() noexcept {
-            TTF_CloseFont(handle);
-        }
-
-        operator TTF_Font* () noexcept {
-            return handle;
-        }
-    };
-
-    sdl::Surface RenderText_Blended_Wrapped(Font& font, char const* text, SDL_Color fg, Uint32 wrapLength) {
-        SDL_Surface* s = TTF_RenderText_Blended_Wrapped(font, text, fg, wrapLength);
-
-        if (s == nullptr) {
-            throw std::runtime_error{"TTF_RenderText_Blended_Wrapped failed: "s + TTF_GetError()};
-        }
-
-        return sdl::Surface{s};
-    }
 }
 
 namespace gl {
@@ -814,18 +763,17 @@ namespace ui {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #endif
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+        //SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 2);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
-        SDL_GL_SetSwapInterval(1);  // vsync
 
         return sdl::Window{
                 "Model Visualizer v" OSIMSNIPPETS_VERSION_STRING,
                 SDL_WINDOWPOS_CENTERED,
                 SDL_WINDOWPOS_CENTERED,
                 1024,
-                1024,
+                768,
                 SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE,
         };
     }
@@ -845,13 +793,12 @@ namespace ui {
         return sdl::Renderer{
                 window,
                 -1,
-                SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+                SDL_RENDERER_ACCELERATED,
         };
     }
 
     struct State {
         sdl::Context context = {};
-        sdl::ttf::Context ttf_context = {};
         sdl::Window window = init_gl_window(context);
         sdl::GLContext gl{window};
         sdl::Renderer renderer = init_gl_renderer(window, gl);
@@ -1452,6 +1399,7 @@ namespace examples::imgui {
         glEnable(GL_ALPHA_TEST);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_MULTISAMPLE);
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
@@ -1491,7 +1439,7 @@ namespace examples::imgui {
 
         // initial pan position is the average center of *some of the* geometry
         // in the scene, which is found in an extremely dumb way.
-        {
+        if (false) {  // auto-centering
             glm::vec3 middle = {0.0f, 0.0f, 0.0f};
             unsigned n = 0;
             auto update_middle = [&](glm::vec3 const& v) {
@@ -1521,8 +1469,125 @@ namespace examples::imgui {
         bool show_light = false;
         bool show_unit_cylinder = false;
         bool gamma_correction = false;
+        auto last_render_timepoint = std::chrono::high_resolution_clock::now();
+        auto min_delay_between_frames = 8ms;
 
         while (true) {
+            auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), -theta, glm::vec3{ 0.0f, 1.0f, 0.0f });
+            auto theta_vec = glm::normalize(glm::vec3{ sin(theta), 0.0f, cos(theta) });
+            auto phi_axis = glm::cross(theta_vec, glm::vec3{ 0.0, 1.0f, 0.0f });
+            auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), -phi, phi_axis);
+            auto pan_translate = glm::translate(glm::identity<glm::mat4>(), pan);
+            float aspect_ratio = static_cast<float>(window_dims.w) / static_cast<float>(window_dims.h);
+
+            // event loop
+            SDL_Event e;
+            SDL_WaitEvent(&e);
+            do {
+                ImGui_ImplSDL2_ProcessEvent(&e);
+                if (e.type == SDL_QUIT) {
+                    return;
+                } else if (e.type == SDL_KEYDOWN) {
+                    switch (e.key.keysym.sym) {
+                    case SDLK_ESCAPE:
+                        return;  // quit visualizer
+                    case SDLK_w:
+                        wireframe_mode = not wireframe_mode;
+                        break;
+                    }
+                } else if (e.type == SDL_MOUSEBUTTONDOWN) {
+                    switch (e.button.button) {
+                    case SDL_BUTTON_LEFT:
+                        dragging = true;
+                        break;
+                    case SDL_BUTTON_RIGHT:
+                        panning = true;
+                        break;
+                    }
+                } else if (e.type == SDL_MOUSEBUTTONUP) {
+                    switch (e.button.button) {
+                    case SDL_BUTTON_LEFT:
+                        dragging = false;
+                        break;
+                    case SDL_BUTTON_RIGHT:
+                        panning = false;
+                        break;
+                    }
+                } else if (e.type == SDL_MOUSEMOTION) {
+                    if (io.WantCaptureMouse) {
+                        // if ImGUI wants to capture the mouse, then the mouse
+                        // is probably interacting with an ImGUI panel and,
+                        // therefore, the dragging/panning shouldn't be handled
+                        continue;
+                    }
+
+                    if (abs(e.motion.xrel) > 200 or abs(e.motion.yrel) > 200) {
+                        // probably a frameskip or the mouse was forcibly teleported
+                        // because it hit the edge of the screen
+                        continue;
+                    }
+
+                    if (dragging) {
+                        // alter camera position while dragging
+                        float dx = -static_cast<float>(e.motion.xrel) / static_cast<float>(window_dims.w);
+                        float dy = static_cast<float>(e.motion.yrel) / static_cast<float>(window_dims.h);
+                        theta += 2.0f * static_cast<float>(M_PI) * sensitivity * dx;
+                        phi += 2.0f * static_cast<float>(M_PI) * sensitivity * dy;
+                    }
+
+                    if (panning) {
+                        float dx = static_cast<float>(e.motion.xrel) / static_cast<float>(window_dims.w);
+                        float dy = -static_cast<float>(e.motion.yrel) / static_cast<float>(window_dims.h);
+
+                        // how much panning is done depends on how far the camera is from the
+                        // origin (easy, with polar coordinates) *and* the FoV of the camera.
+                        float x_amt = dx * aspect_ratio * (2.0f * tan(fov / 2.0f) * radius);
+                        float y_amt = dy * (1.0f / aspect_ratio) * (2.0f * tan(fov / 2.0f) * radius);
+
+                        // this assumes the scene is not rotated, so we need to rotate these
+                        // axes to match the scene's rotation
+                        glm::vec4 default_panning_axis = { x_amt, y_amt, 0.0f, 1.0f };
+                        auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), theta, glm::vec3{ 0.0f, 1.0f, 0.0f });
+                        auto theta_vec = glm::normalize(glm::vec3{ sin(theta), 0.0f, cos(theta) });
+                        auto phi_axis = glm::cross(theta_vec, glm::vec3{ 0.0, 1.0f, 0.0f });
+                        auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), phi, phi_axis);
+
+                        glm::vec4 panning_axes = rot_phi * rot_theta * default_panning_axis;
+                        pan.x += panning_axes.x;
+                        pan.y += panning_axes.y;
+                        pan.z += panning_axes.z;
+                    }
+
+                    if (dragging or panning) {
+                        // wrap mouse if it hits edges
+                        constexpr int edge_width = 5;
+                        if (e.motion.x + edge_width > window_dims.w) {
+                            SDL_WarpMouseInWindow(s.window, edge_width, e.motion.y);
+                        }
+                        if (e.motion.x - edge_width < 0) {
+                            SDL_WarpMouseInWindow(s.window, window_dims.w - edge_width, e.motion.y);
+                        }
+                        if (e.motion.y + edge_width > window_dims.h) {
+                            SDL_WarpMouseInWindow(s.window, e.motion.x, edge_width);
+                        }
+                        if (e.motion.y - edge_width < 0) {
+                            SDL_WarpMouseInWindow(s.window, e.motion.x, window_dims.h - edge_width);
+                        }
+                    }
+                } else if (e.type == SDL_WINDOWEVENT) {
+                    window_dims = sdl::window_size(s.window);
+                    glViewport(0, 0, window_dims.w, window_dims.h);
+                } else if (e.type == SDL_MOUSEWHEEL) {
+                    if (e.wheel.y > 0 and radius >= 0.1f) {
+                        radius *= wheel_sensitivity;
+                    }
+
+                    if (e.wheel.y <= 0 and radius < 100.0f) {
+                        radius /= wheel_sensitivity;
+                    }
+                }
+            } while (SDL_PollEvent(&e) == 1);
+
             if (gamma_correction) {
                 glEnable(GL_FRAMEBUFFER_SRGB);
             } else {
@@ -1536,12 +1601,6 @@ namespace examples::imgui {
             gl::UseProgram(gls.program);
 
             // set *invariant* uniforms
-            auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), -theta, glm::vec3{0.0f, 1.0f, 0.0f});
-            auto theta_vec = glm::normalize(glm::vec3{sin(theta), 0.0f, cos(theta)});
-            auto phi_axis = glm::cross(theta_vec, glm::vec3{0.0, 1.0f, 0.0f});
-            auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), -phi, phi_axis);
-            auto pan_translate = glm::translate(glm::identity<glm::mat4>(), pan);
-            float aspect_ratio = static_cast<float>(window_dims.w)/static_cast<float>(window_dims.h);
             {
                 auto proj_matrix = glm::perspective(fov, aspect_ratio, 0.1f, 100.0f);
                 // camera: at a fixed position pointing at a fixed origin. The "camera" works by translating +
@@ -1577,7 +1636,6 @@ namespace examples::imgui {
 
             for (auto& l : ms.lines) {
                 gl::BindVertexArray(gls.cylinder.vao);
-                //gl::BindVertexArray(l.vao);
 
                 // color
                 glglm::Uniform(gls.rgba, l.data.rgba);
@@ -1594,7 +1652,7 @@ namespace examples::imgui {
 
                 glglm::Uniform(gls.modelMat, translation * rotation * scale_xform);
                 glDrawArrays(GL_TRIANGLES, 0, gls.cylinder.num_verts);
-                //glDrawArrays(GL_LINES, 0, 2);
+
                 gl::BindVertexArray();
             }
 
@@ -1719,122 +1777,23 @@ namespace examples::imgui {
             if (panning) {
                 ImGui::Text("panning");
             }
-
-
             ImGui::End();
 
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
+            // software-throttle the framerate: no need to render at an insane
+            // (e.g. 2000 FPS, on my machine) FPS, but do not use VSYNC because
+            // it makes the entire application feel *very* laggy.
+            auto now = std::chrono::high_resolution_clock::now();
+            auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_render_timepoint);
+            if (dt < min_delay_between_frames) {
+                SDL_Delay((min_delay_between_frames - dt).count());
+            }
+
             // draw
             SDL_GL_SwapWindow(s.window);
-
-            // event loop
-            SDL_Event e;
-            while (SDL_PollEvent(&e)) {
-                ImGui_ImplSDL2_ProcessEvent(&e);
-                if (e.type == SDL_QUIT) {
-                    return;
-                } else if (e.type == SDL_KEYDOWN) {
-                    switch (e.key.keysym.sym) {
-                        case SDLK_ESCAPE:
-                            return;  // quit visualizer
-                        case SDLK_w:
-                            wireframe_mode = not wireframe_mode;
-                            break;
-                    }
-                } else if (e.type == SDL_MOUSEBUTTONDOWN) {
-                    switch (e.button.button) {
-                        case SDL_BUTTON_LEFT:
-                            dragging = true;
-                            break;
-                        case SDL_BUTTON_RIGHT:
-                            panning = true;
-                            break;
-                    }
-                } else if (e.type == SDL_MOUSEBUTTONUP) {
-                    switch (e.button.button) {
-                        case SDL_BUTTON_LEFT:
-                            dragging = false;
-                            break;
-                        case SDL_BUTTON_RIGHT:
-                            panning = false;
-                            break;
-                    }
-                } else if (e.type == SDL_MOUSEMOTION) {
-                    if (io.WantCaptureMouse) {
-                        // if ImGUI wants to capture the mouse, then the mouse
-                        // is probably interacting with an ImGUI panel and,
-                        // therefore, the dragging/panning shouldn't be handled
-                        continue;
-                    }
-
-                    if (abs(e.motion.xrel) > 200 or abs(e.motion.yrel) > 200) {
-                        // probably a frameskip or the mouse was forcibly teleported
-                        // because it hit the edge of the screen
-                        continue;
-                    }
-
-                    if (dragging) {
-                        // alter camera position while dragging
-                        float dx = -static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
-                        float dy = static_cast<float>(e.motion.yrel)/static_cast<float>(window_dims.h);
-                        theta += 2.0f * static_cast<float>(M_PI) * sensitivity * dx;
-                        phi += 2.0f * static_cast<float>(M_PI) * sensitivity * dy;
-                    }
-
-                    if (panning) {
-                        float dx = static_cast<float>(e.motion.xrel)/static_cast<float>(window_dims.w);
-                        float dy = -static_cast<float>(e.motion.yrel)/static_cast<float>(window_dims.h);
-
-                        // how much panning is done depends on how far the camera is from the
-                        // origin (easy, with polar coordinates) *and* the FoV of the camera.
-                        float x_amt = dx * aspect_ratio * (2.0f * tan(fov/2.0f) * radius);
-                        float y_amt = dy * (1.0f/aspect_ratio) * (2.0f * tan(fov/2.0f) * radius);
-
-                        // this assumes the scene is not rotated, so we need to rotate these
-                        // axes to match the scene's rotation
-                        glm::vec4 default_panning_axis = {x_amt, y_amt, 0.0f, 1.0f};
-                        auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), theta, glm::vec3{0.0f, 1.0f, 0.0f});
-                        auto theta_vec = glm::normalize(glm::vec3{sin(theta), 0.0f, cos(theta)});
-                        auto phi_axis = glm::cross(theta_vec, glm::vec3{0.0, 1.0f, 0.0f});
-                        auto rot_phi = glm::rotate(glm::identity<glm::mat4>(), phi, phi_axis);
-
-                        glm::vec4 panning_axes = rot_phi * rot_theta * default_panning_axis;
-                        pan.x += panning_axes.x;
-                        pan.y += panning_axes.y;
-                        pan.z += panning_axes.z;
-                    }
-
-                    if (dragging or panning) {
-                        // wrap mouse if it hits edges
-                        constexpr int edge_width = 5;
-                        if (e.motion.x + edge_width > window_dims.w) {
-                            SDL_WarpMouseInWindow(s.window, edge_width, e.motion.y);
-                        }
-                        if (e.motion.x - edge_width < 0) {
-                            SDL_WarpMouseInWindow(s.window, window_dims.w - edge_width, e.motion.y);
-                        }
-                        if (e.motion.y + edge_width > window_dims.h) {
-                            SDL_WarpMouseInWindow(s.window, e.motion.x, edge_width);
-                        }
-                        if (e.motion.y - edge_width < 0) {
-                            SDL_WarpMouseInWindow(s.window, e.motion.x, window_dims.h - edge_width);
-                        }
-                    }
-                } else if (e.type == SDL_WINDOWEVENT) {
-                    window_dims = sdl::window_size(s.window);
-                    glViewport(0, 0, window_dims.w, window_dims.h);
-                } else if (e.type == SDL_MOUSEWHEEL) {
-                    if (e.wheel.y > 0 and radius >= 0.1f) {
-                        radius *= wheel_sensitivity;
-                    }
-
-                    if (e.wheel.y <= 0 and radius < 100.0f) {
-                        radius /= wheel_sensitivity;
-                    }
-                }
-            }
+            last_render_timepoint = std::chrono::high_resolution_clock::now();
         }
     }
 }
