@@ -42,7 +42,146 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 static char rajagopal_model_path[] = R"(C:\Users\ak\Desktop\osim-snippets\resources\opensim-models\Models\RajagopalModel\Rajagopal2015.osim)";
 
+// Thin C++ wrappers around SDL2, so that downstream code can use SDL2 in an
+// exception-safe way
 namespace sdl {
+    // RAII wrapper for the SDL library that calls SDL_Quit() on dtor
+    //     https://wiki.libsdl.org/SDL_Quit
+    class [[nodiscard]] Context final {
+        Context() = default;
+        friend Context Init(Uint32);
+    public:
+        Context(Context const&) = delete;
+        Context(Context&&) = delete;
+        Context& operator=(Context const&) = delete;
+        Context& operator=(Context&&) = delete;
+        ~Context() noexcept {
+            SDL_Quit();
+        }
+    };
+
+    // RAII'ed version of SDL_Init() that returns a lifetime wrapper that calls
+    // SDL_Quit on destruction:
+    //     https://wiki.libsdl.org/SDL_Init
+    //     https://wiki.libsdl.org/SDL_Quit
+    Context Init(Uint32 flags) {
+        if (SDL_Init(flags) != 0) {
+            throw std::runtime_error{"SDL_Init: failed: "s + SDL_GetError()};
+        }
+        return Context{};
+    }
+
+    // RAII wrapper around SDL_Window that calls SDL_DestroyWindow on dtor
+    //     https://wiki.libsdl.org/SDL_CreateWindow
+    //     https://wiki.libsdl.org/SDL_DestroyWindow
+    class Window final {
+        SDL_Window* ptr;
+    public:
+        Window(SDL_Window* _ptr) : ptr{_ptr} {
+            if (ptr == nullptr) {
+                throw std::runtime_error{"sdl::Window: window passed in was null: "s + SDL_GetError()};
+            }
+        }
+        Window(Window const&) = delete;
+        Window(Window&&) = delete;
+        Window& operator=(Window const&) = delete;
+        Window& operator=(Window&&) = delete;
+        ~Window() noexcept {
+            SDL_DestroyWindow(ptr);
+        }
+
+        operator SDL_Window* () noexcept {
+            return ptr;
+        }
+    };
+
+    // RAII'ed version of SDL_CreateWindow. The name is a typo because
+    // `CreateWindow` is defined in the preprocessor:
+    //     https://wiki.libsdl.org/SDL_CreateWindow
+    Window CreateWindoww(const char* title, int x, int y, int w, int h, Uint32 flags) {
+        SDL_Window* win = SDL_CreateWindow(title, x, y, w, h, flags);
+
+        if (win == nullptr) {
+            throw std::runtime_error{"SDL_CreateWindow failed: "s + SDL_GetError()};
+        }
+
+        return Window{win};
+    }
+
+    // RAII wrapper around an SDL_Renderer that calls SDL_DestroyRenderer on dtor
+    //     https://wiki.libsdl.org/SDL_Renderer
+    //     https://wiki.libsdl.org/SDL_DestroyRenderer
+    class Renderer final {
+        SDL_Renderer* ptr;
+    public:
+        Renderer(SDL_Renderer* _ptr) : ptr{ _ptr } {
+            if (ptr == nullptr) {
+                throw std::runtime_error{"sdl::Renderer constructor called with null argument: "s + SDL_GetError()};
+            }
+        }
+        Renderer(Renderer const&) = delete;
+        Renderer(Renderer&&) = delete;
+        Renderer& operator=(Renderer const&) = delete;
+        Renderer& operator=(Renderer&&) = delete;
+        ~Renderer() noexcept {
+            SDL_DestroyRenderer(ptr);
+        }
+
+        operator SDL_Renderer* () noexcept {
+            return ptr;
+        }
+    };
+
+    // RAII'ed version of SDL_CreateRenderer
+    //     https://wiki.libsdl.org/SDL_CreateRenderer
+    Renderer CreateRenderer(SDL_Window* w, int index, Uint32 flags) {
+        SDL_Renderer* r = SDL_CreateRenderer(w, index, flags);
+
+        if (r == nullptr) {
+            throw std::runtime_error{"SDL_CreateRenderer: failed: "s + SDL_GetError()};
+        }
+
+        return Renderer{r};
+    }
+
+    // RAII wrapper around SDL_GLContext that calls SDL_GL_DeleteContext on dtor
+    //     https://wiki.libsdl.org/SDL_GL_DeleteContext
+    class GLContext final {
+        SDL_GLContext ctx;
+    public:
+        GLContext(SDL_GLContext _ctx) : ctx{ _ctx } {
+            if (ctx == nullptr) {
+                throw std::runtime_error{"sdl::GLContext: constructor called with null context"};
+            }
+        }
+        GLContext(GLContext const&) = delete;
+        GLContext(GLContext&&) = delete;
+        GLContext& operator=(GLContext const&) = delete;
+        GLContext& operator=(GLContext&&) = delete;
+        ~GLContext() noexcept {
+            SDL_GL_DeleteContext(ctx);
+        }
+
+        operator SDL_GLContext () noexcept {
+            return ctx;
+        }
+    };
+
+    // RAII'ed version of SDL_GL_CreateContext:
+    //     https://wiki.libsdl.org/SDL_GL_CreateContext
+    GLContext GL_CreateContext(SDL_Window* w) {
+        SDL_GLContext ctx = SDL_GL_CreateContext(w);
+
+        if (ctx == nullptr) {
+            throw std::runtime_error{"SDL_GL_CreateContext failed: "s + SDL_GetError()};
+        }
+
+        return GLContext{ctx};
+    }
+
+    // RAII wrapper for SDL_Surface that calls SDL_FreeSurface on dtor:
+    //     https://wiki.libsdl.org/SDL_Surface
+    //     https://wiki.libsdl.org/SDL_FreeSurface
     class Surface final {
         SDL_Surface* handle;
     public:
@@ -69,9 +208,27 @@ namespace sdl {
         }
     };
 
-    template<class ...Args>
-    Surface CreateRGBSurface(Args... args) {
-        SDL_Surface* handle = SDL_CreateRGBSurface(std::forward<Args>(args)...);
+    // RAII'ed version of SDL_CreateRGBSurface:
+    //     https://wiki.libsdl.org/SDL_CreateRGBSurface
+    Surface CreateRGBSurface(
+        Uint32 flags,
+        int    width,
+        int    height,
+        int    depth,
+        Uint32 Rmask,
+        Uint32 Gmask,
+        Uint32 Bmask,
+        Uint32 Amask) {
+
+        SDL_Surface* handle = SDL_CreateRGBSurface(
+            flags,
+            width,
+            height,
+            depth,
+            Rmask,
+            Gmask,
+            Bmask,
+            Amask);
 
         if (handle == nullptr) {
             throw std::runtime_error{"SDL_CreateRGBSurface: "s + SDL_GetError()};
@@ -80,6 +237,9 @@ namespace sdl {
         return Surface{handle};
     }
 
+    // RAII wrapper around SDL_LockSurface/SDL_UnlockSurface:
+    //     https://wiki.libsdl.org/SDL_LockSurface
+    //     https://wiki.libsdl.org/SDL_UnlockSurface
     class Surface_lock final {
         SDL_Surface* ptr;
     public:
@@ -97,6 +257,15 @@ namespace sdl {
         }
     };
 
+    // RAII'ed version of SDL_LockSurface:
+    //     https://wiki.libsdl.org/SDL_LockSurface
+    Surface_lock LockSurface(SDL_Surface* s) {
+        return Surface_lock{s};
+    }
+
+    // RAII wrapper around SDL_Texture that calls SDL_DestroyTexture on dtor:
+    //     https://wiki.libsdl.org/SDL_Texture
+    //     https://wiki.libsdl.org/SDL_DestroyTexture
     class Texture final {
         SDL_Texture* handle;
     public:
@@ -118,6 +287,8 @@ namespace sdl {
         }
     };
 
+    // RAII'ed version of SDL_CreateTextureFromSurface:
+    //     https://wiki.libsdl.org/SDL_CreateTextureFromSurface
     Texture CreateTextureFromSurface(SDL_Renderer* r, SDL_Surface* s) {
         SDL_Texture* t = SDL_CreateTextureFromSurface(r, s);
         if (t == nullptr) {
@@ -126,94 +297,19 @@ namespace sdl {
         return Texture{t};
     }
 
-    class Window final {
-        SDL_Window* ptr;
-    public:
-        template<class ...Args>
-        Window(Args... args) : ptr{SDL_CreateWindow(std::forward<Args>(args)...)} {
-            if (ptr == nullptr) {
-                throw std::runtime_error{"SDL_CreateWindow: "s + SDL_GetError()};
-            }
-        }
-        Window(Window const&) = delete;
-        Window(Window&&) = delete;
-        Window& operator=(Window const&) = delete;
-        Window& operator=(Window&&) = delete;
-        ~Window() noexcept {
-            SDL_DestroyWindow(ptr);
-        }
-
-        operator SDL_Window*() noexcept {
-            return ptr;
-        }
+    struct Window_dimensions final {
+        int w;
+        int h;
     };
 
-    std::pair<int, int> window_size(SDL_Window* window) {
+    // Easier-to-use version of SDL_GetWindowSize:
+    //     https://wiki.libsdl.org/SDL_GetWindowSize
+    Window_dimensions GetWindowSize(SDL_Window* window) {
         int w;
         int h;
         SDL_GetWindowSize(window, &w, &h);
         return {w, h};
     }
-
-    class Renderer final {
-        SDL_Renderer* ptr;
-    public:
-        template<class ...Args>
-        Renderer(SDL_Window* w, Args... args) :
-            ptr{SDL_CreateRenderer(w, std::forward<Args>(args)...)} {
-            if (ptr == nullptr) {
-                throw std::runtime_error{"SDL_CreateRenderer failed: "s + SDL_GetError()};
-            }
-        }
-        Renderer(Renderer const&) = delete;
-        Renderer(Renderer&&) = delete;
-        Renderer& operator=(Renderer const&) = delete;
-        Renderer& operator=(Renderer&&) = delete;
-        ~Renderer() noexcept {
-            SDL_DestroyRenderer(ptr);
-        }
-
-        operator SDL_Renderer* () noexcept {
-            return ptr;
-        }
-    };
-
-    class GLContext final {
-        SDL_GLContext ctx;
-    public:
-        GLContext(SDL_Window* w) : ctx{SDL_GL_CreateContext(w)} {
-            if (ctx == nullptr) {
-                throw std::runtime_error{"SDL_GL_CreateContext failed: "s + SDL_GetError()};
-            }
-            SDL_GL_SetSwapInterval(0);  // vsync
-        }
-        GLContext(GLContext const&) = delete;
-        GLContext(GLContext&&) = delete;
-        GLContext& operator=(GLContext const&) = delete;
-        GLContext& operator=(GLContext&&) = delete;
-        ~GLContext() noexcept {
-            SDL_GL_DeleteContext(ctx);
-        }
-
-        operator SDL_GLContext () noexcept {
-            return ctx;
-        }
-    };
-
-    struct Context final {
-        Context() {
-            if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER)  != 0) {
-                throw std::runtime_error{"SDL_Init: failed: "s + SDL_GetError()};
-            }
-        }
-        Context(Context const&) = delete;
-        Context(Context&&) = delete;
-        Context& operator=(Context const&) = delete;
-        Context& operator=(Context&&) = delete;
-        ~Context() noexcept{
-            SDL_Quit();
-        }
-    };
 }
 
 namespace gl {
@@ -222,7 +318,6 @@ namespace gl {
     }
 
     void assert_no_errors(char const* func) {
-        return ;
         std::vector<GLenum> errors;
         for (GLenum error = glGetError(); error != GL_NO_ERROR; error = glGetError()) {
             errors.push_back(error);
@@ -666,7 +761,7 @@ namespace glm {
 }
 
 namespace ig {
-    struct Context {
+    struct Context final {
         Context() {
             ImGui::CreateContext();
         }
@@ -679,7 +774,7 @@ namespace ig {
         }
     };
 
-    struct SDL2_Context {
+    struct SDL2_Context final {
         SDL2_Context(SDL_Window* w, SDL_GLContext gl) {
             ImGui_ImplSDL2_InitForOpenGL(w, gl);
         }
@@ -692,7 +787,7 @@ namespace ig {
         }
     };
 
-    struct OpenGL3_Context {
+    struct OpenGL3_Context final {
         OpenGL3_Context(char const* version) {
             ImGui_ImplOpenGL3_Init(version);
         }
@@ -768,14 +863,13 @@ namespace ui {
         //SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 2);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
 
-        return sdl::Window{
-                "Model Visualizer v" OSIMSNIPPETS_VERSION_STRING,
-                SDL_WINDOWPOS_CENTERED,
-                SDL_WINDOWPOS_CENTERED,
-                1024,
-                768,
-                SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE,
-        };
+        return sdl::CreateWindoww(
+            "Model Visualizer v" OSIMSNIPPETS_VERSION_STRING,
+            SDL_WINDOWPOS_CENTERED,
+            SDL_WINDOWPOS_CENTERED,
+            1024,
+            768,
+            SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     }
 
     sdl::Renderer init_gl_renderer(sdl::Window& window, sdl::GLContext& gl_ctx) {
@@ -790,17 +884,13 @@ namespace ui {
             throw std::runtime_error{ss.str()};
         }
 
-        return sdl::Renderer{
-                window,
-                -1,
-                SDL_RENDERER_ACCELERATED,
-        };
+        return sdl::CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     }
 
     struct State {
-        sdl::Context context = {};
+        sdl::Context context = sdl::Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
         sdl::Window window = init_gl_window(context);
-        sdl::GLContext gl{window};
+        sdl::GLContext gl = sdl::GL_CreateContext(window);
         sdl::Renderer renderer = init_gl_renderer(window, gl);
     };
 }
@@ -1422,7 +1512,7 @@ namespace examples::imgui {
         ModelState ms = load_model(gls, file);
 
         bool wireframe_mode = false;
-        ScreenDims window_dims = sdl::window_size(s.window);
+        sdl::Window_dimensions window_dims = sdl::GetWindowSize(s.window);
         float radius = 1.0f;
         float wheel_sensitivity = 0.9f;
         float line_width = 0.002f;
@@ -1575,7 +1665,7 @@ namespace examples::imgui {
                         }
                     }
                 } else if (e.type == SDL_WINDOWEVENT) {
-                    window_dims = sdl::window_size(s.window);
+                    window_dims = sdl::GetWindowSize(s.window);
                     glViewport(0, 0, window_dims.w, window_dims.h);
                 } else if (e.type == SDL_MOUSEWHEEL) {
                     if (e.wheel.y > 0 and radius >= 0.1f) {
