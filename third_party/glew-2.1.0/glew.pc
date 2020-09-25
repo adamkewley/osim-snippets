@@ -1,0 +1,11 @@
+prefix=/home/adam/Desktop/osim-snippets/relwithdebinfo-qtc-install
+exec_prefix=${prefix}
+libdir=/home/adam/Desktop/osim-snippets/relwithdebinfo-qtc-install/lib
+includedir=${prefix}/include
+
+Name: glew
+Description: The OpenGL Extension Wrangler library
+Version: 2.1.0
+Cflags: -I${includedir} 
+Libs: -L${libdir} -lGLEW
+Requires: glu
