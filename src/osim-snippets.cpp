@@ -24,8 +24,8 @@ struct Cmd final {
 };
 
 static const Cmd cmds[] = {
-//    { "show", oss_show },
-    { "expt_wrapp", oss_expt_wrapp },
+    { "expt_wrap", oss_expt_wrapp },
+    { "show", oss_show },
 };
 
 int main(int argc, char** argv) {

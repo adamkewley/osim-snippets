@@ -4,7 +4,6 @@
 #include "OsimsnippetsConfig.h"
 
 #include <GL/glew.h>
-#include <GL/glut.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -39,8 +38,6 @@ using std::chrono_literals::operator""ms;
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 // explicit deduction guide (not needed as of C++20)
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
-static char rajagopal_model_path[] = R"(C:\Users\ak\Desktop\osim-snippets\resources\opensim-models\Models\RajagopalModel\Rajagopal2015.osim)";
 
 // Thin C++ wrappers around SDL2, so that downstream code can use SDL2 in an
 // exception-safe way
@@ -1891,13 +1888,8 @@ namespace examples::imgui {
 int oss_show(int argc, char** argv) {
     auto ui = ui::State{};
 
-    if (argc <= 1) {
-        examples::imgui::show(ui, rajagopal_model_path);
-    } else {
-        for (int i = 1; i < argc; ++i) {
-            examples::imgui::show(ui, argv[i]);
-        }
-    }
+    // TODO: better handling
+    examples::imgui::show(ui, argv[2]);
 
     return 0;
 };

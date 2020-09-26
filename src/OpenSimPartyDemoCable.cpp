@@ -258,4 +258,5 @@ int oss_expt_party() {
   } catch (const std::exception& e) {
     cout << "EXCEPTION: " << e.what() << "\n";
   }
+  return 0;
 }
