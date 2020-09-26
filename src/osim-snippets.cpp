@@ -16,6 +16,7 @@ int oss_sizes(int argc, char** argv);
 int oss_expt_cable(int argc, char** argv);
 int oss_expt_pendu(int argc, char** argv);
 int oss_expt_wrapp(int argc, char** argv);
+int oss_expt_party(int argc, char** argv);
 
 struct Cmd final {
     const char* name;

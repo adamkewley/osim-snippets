@@ -72,167 +72,157 @@ private:
     CableSpring             cable1;
 };
 
-int main() {
-    // system setup
+int oss_expt_party() {
+  try {    
+    // Create the system.   
     MultibodySystem system;
-    system.setUseUniformBackground(true);
-
-    // subsystem setup
     SimbodyMatterSubsystem matter(system);
+
     matter.setShowDefaultGeometry(false);
+
     CableTrackerSubsystem cables(system);
     GeneralForceSubsystem forces(system);
 
-    // global forces/dampeners
     Force::Gravity gravity(forces, matter, -YAxis, 9.81);
-    Force::GlobalDamper(forces, matter, 5);
+    // Force::GlobalDamper(forces, matter, 5);
 
+    system.setUseUniformBackground(true);    // no ground plane in display
+    MobilizedBody Ground = matter.Ground(); // convenient abbreviation
 
-    // Read in some bones
-    //
-    // - The femur is joined to the tibia via a Pin joint
+    // Read in some bones.
     PolygonalMesh femur;
-    femur.loadVtpFile("CableOverBicubicSurfaces-femur.vtp");
-    femur.scaleMesh(30);
-    Body::Rigid pendulumBodyFemur(
-                MassProperties(1.0, Vec3(0, -5, 0),
-                UnitInertia(1).shiftFromCentroid(Vec3(0, 5, 0))));
-    pendulumBodyFemur.addDecoration(
-                Transform(),
-                DecorativeMesh(femur).setColor(Vec3(0.8, 0.8, 0.8)));
-    MobilizedBody::Pin groundToFemurPin(
-                matter.updGround(),
-                Transform(Vec3(0, 0, 0)),
-                pendulumBodyFemur,
-                Transform(Vec3(0, 0, 0)));
-
-
     PolygonalMesh tibia;
-    tibia.loadVtpFile("CableOverBicubicSurfaces-tibia.vtp");
+
+    femur.loadVtpFile("resources/CableOverBicubicSurfaces-femur.vtp");
+    tibia.loadVtpFile("resources/CableOverBicubicSurfaces-tibia.vtp");
+    femur.scaleMesh(30);
     tibia.scaleMesh(30);
-    Body::Rigid pendulumBodyTibia(
-                MassProperties(1.0, Vec3(0, -5, 0),
-                UnitInertia(1).shiftFromCentroid(Vec3(0, 5, 0))));
-    pendulumBodyTibia.addDecoration(
-                Transform(),
-                DecorativeMesh(tibia).setColor(Vec3(0.8, 0.8, 0.8)));
-    MobilizedBody::Pin femurToTibiaPin(
-                groundToFemurPin,
-                Transform(Rotation(-Pi/4, ZAxis), Vec3(0, -12, 0)),
-                pendulumBodyTibia,
-                Transform(Vec3(0, 0, 0)));
 
+    // Build a pendulum
+    Body::Rigid pendulumBodyFemur(    MassProperties(1.0, Vec3(0, -5, 0), 
+                                    UnitInertia(1).shiftFromCentroid(Vec3(0, 5, 0))));
 
-    Constraint::PrescribedMotion prescribedMotion(
-                matter,
-                new Function::Sinusoid(0.25*Pi, 0.2*Pi, 0.0),
-                femurToTibiaPin,
-                MobilizerQIndex(0));
+    pendulumBodyFemur.addDecoration(Transform(), DecorativeMesh(femur).setColor(Vec3(0.8, 0.8, 0.8)));
 
+    Body::Rigid pendulumBodyTibia(    MassProperties(1.0, Vec3(0, -5, 0), 
+                                    UnitInertia(1).shiftFromCentroid(Vec3(0, 5, 0))));
+
+    pendulumBodyTibia.addDecoration(Transform(), DecorativeMesh(tibia).setColor(Vec3(0.8, 0.8, 0.8)));
+
+    Rotation z180(Pi, YAxis);
+
+    MobilizedBody::Pin pendulumFemur(    matter.updGround(),
+                                        Transform(Vec3(0, 0, 0)),
+                                        pendulumBodyFemur,
+                                        Transform(Vec3(0, 0, 0)) );
+
+    Rotation rotZ45(-Pi/4, ZAxis);
+
+    MobilizedBody::Pin pendulumTibia(   pendulumFemur,
+                                        Transform(rotZ45, Vec3(0, -12, 0)),
+                                        pendulumBodyTibia,
+                                        Transform(Vec3(0, 0, 0)) );
+
+    Real initialPendulumOffset = -0.25*Pi;
+
+    Constraint::PrescribedMotion pres(matter, 
+       new Function::Sinusoid(0.25*Pi, 0.2*Pi, 0*initialPendulumOffset), pendulumTibia, MobilizerQIndex(0));
+               
     // Build a wrapping cable path
-    CablePath cablePath(
-                cables,
-                matter.Ground(),
-                Vec3(1, 3, 1),      // origin
-                femurToTibiaPin,
-                Vec3(1, -4, 0));    // termination
-
+    CablePath path2(cables, Ground, Vec3(1, 3, 1),             // origin
+                            pendulumTibia, Vec3(1, -4, 0));  // termination
+    
     // Create a bicubic surface
-    BicubicSurface patch;
-    {
-        std::array<Real, 4> xdata = {-2, -1, 1, 2};
-        std::array<Real, 4> ydata = xdata;
-        std::array<Real, xdata.size() * ydata.size()> fData = {
-                    2,   3,   3,   1,
-                    0,   1.5, 1.5, 0,
-                    0,   1.5, 1.5, 0,
-                    2,   3,   3,   1,
-        };
+    Vec3 patchOffset(0, -5, -1);
+    Rotation rotZ90(0.5*Pi, ZAxis);
+    Rotation rotX90(0.2*Pi, XAxis);
 
-        Vector x = 2.00 * Vector(xdata.size(), xdata.data());
-        Vector y = 2.00 * Vector(ydata.size(), ydata.data());
-        Matrix f = 0.75 * Matrix(xdata.size(), ydata.size(), fData.data());
+    Rotation patchRotation = rotZ90 * rotX90 * rotZ90;
+    Transform patchTransform(patchRotation, patchOffset);
 
-        patch = BicubicSurface(x, y, f, 0);
-    }
+    Real patchScaleX = 2.0;
+    Real patchScaleY = 2.0;
+    Real patchScaleF = 0.75;
 
-    Transform patchTransform(
-                Rotation(0.5*Pi, ZAxis) * Rotation(0.2*Pi, XAxis) * Rotation(0.5*Pi, ZAxis),
-                Vec3(0, -5, -1));
+    const int Nx = 4, Ny = 4;
+  
+    const Real xData[Nx] = {  -2, -1, 1, 2 };
+    const Real yData[Ny] = {  -2, -1, 1, 2 };
 
-    // Handle surface mesh rendering
-    {
-        Real highRes = 30;
-        Real lowRes  = 1;
+    const Real fData[Nx*Ny] = { 2,        3,        3,        1,
+                                0,         1.5,  1.5,        0,
+                                0,        1.5,  1.5,        0,
+                                2,        3,        3,        1    };
 
-        PolygonalMesh highResPatchMesh = patch.createPolygonalMesh(highRes);
-        PolygonalMesh lowResPatchMesh = patch.createPolygonalMesh(lowRes);
+    const Vector x_(Nx,        xData);
+    const Vector y_(Ny,     yData);
+    const Matrix f_(Nx, Ny, fData);
 
-        groundToFemurPin.addBodyDecoration(
-                    patchTransform,DecorativeMesh(highResPatchMesh).setColor(Cyan).setOpacity(.75));
+    Vector x = patchScaleX*x_;
+    Vector y = patchScaleY*y_;
+    Matrix f = patchScaleF*f_; 
 
-        groundToFemurPin.addBodyDecoration(
-                    patchTransform,
-                    DecorativeMesh(lowResPatchMesh).setRepresentation(DecorativeGeometry::DrawWireframe));
-    }
+    BicubicSurface patch(x, y, f, 0);
 
-    // Use the surface as an obstacle, with P and Q as wrapping "hints"
-    Vec3 patchP(-0.5, -1, 2);
-    groundToFemurPin.addBodyDecoration(
-                patchTransform,
-                DecorativePoint(patchP).setColor(Green).setScale(2));
+    Real highRes = 30;
+    Real lowRes  = 1;
 
-    Vec3 patchQ(-0.5,  1, 2);
-    groundToFemurPin.addBodyDecoration(
-                patchTransform,
-                DecorativePoint(patchQ).setColor(Red).setScale(2));
+    PolygonalMesh highResPatchMesh = patch.createPolygonalMesh(highRes);
+    PolygonalMesh lowResPatchMesh = patch.createPolygonalMesh(lowRes);
 
-    CableObstacle::Surface patchObstacle(
-                cablePath,
-                groundToFemurPin,
-                patchTransform,
-                ContactGeometry::SmoothHeightMap(patch));
-    patchObstacle.setContactPointHints(patchP, patchQ);
-    patchObstacle.setDisabledByDefault(true);
+   
+    pendulumFemur.addBodyDecoration(patchTransform,
+        DecorativeMesh(highResPatchMesh).setColor(Cyan).setOpacity(.75));
 
+    pendulumFemur.addBodyDecoration(patchTransform,
+         DecorativeMesh(lowResPatchMesh).setRepresentation(DecorativeGeometry::DrawWireframe));
 
-    // Create a sphere obstacle
-    Real sphRadius = 1.5;
-    Vec3 sphOffset(0, -0.5, 0);
+    Vec3 patchP(-0.5,-1,2), patchQ(-0.5,1,2);
+
+    pendulumFemur.addBodyDecoration(patchTransform,
+        DecorativePoint(patchP).setColor(Green).setScale(2));
+
+    pendulumFemur.addBodyDecoration(patchTransform,
+        DecorativePoint(patchQ).setColor(Red).setScale(2));
+
+     CableObstacle::Surface patchObstacle(path2, pendulumFemur, patchTransform,
+         ContactGeometry::SmoothHeightMap(patch));
+        
+      patchObstacle.setContactPointHints(patchP, patchQ);
+    
+      patchObstacle.setDisabledByDefault(true);
+
+    // Sphere
+    Real      sphRadius = 1.5;
+
+    Vec3      sphOffset(0, -0.5, 0);
     Rotation  sphRotation(0*Pi, YAxis);
     Transform sphTransform(sphRotation, sphOffset);
 
-    CableObstacle::Surface tibiaSphere(
-                cablePath,
-                femurToTibiaPin,
-                sphTransform,
-                ContactGeometry::Sphere(sphRadius));
+    CableObstacle::Surface tibiaSphere(path2, pendulumTibia, sphTransform,
+        ContactGeometry::Sphere(sphRadius));
 
-    Vec3 sphP(1.5,-0.5,0);
-    Vec3 sphQ(1.5,0.5,0);
+    Vec3 sphP(1.5,-0.5,0), sphQ(1.5,0.5,0);
     tibiaSphere.setContactPointHints(sphP, sphQ);
 
-    femurToTibiaPin.addBodyDecoration(
-                sphTransform,
-                DecorativeSphere(sphRadius).setColor(Red).setOpacity(0.5));
+    pendulumTibia.addBodyDecoration(sphTransform,
+        DecorativeSphere(sphRadius).setColor(Red).setOpacity(0.5));
 
-
-    // Create a wrapping cable as a spring
-    CableSpring cable2(forces, cablePath, 50., 18., 0.1);
-
-
-    // Model setup complete: initialize rest of system
+    // Make cable a spring
+    CableSpring cable2(forces, path2, 50., 18., 0.1); 
 
     Visualizer viz(system);
     viz.setShowFrameNumber(true);
     system.addEventReporter(new Visualizer::Reporter(viz, 1./30));
-    system.addEventReporter(new ShowStuff(system, cable2, 0.02));
-
+    system.addEventReporter(new ShowStuff(system, cable2, 0.02));    
+    // Initialize the system and state.
+    
     system.realizeTopology();
     State state = system.getDefaultState();
+
     system.realize(state, Stage::Position);
     viz.report(state);
-    cout << "path2 init length=" << cablePath.getCableLength(state) << endl;
+    cout << "path2 init length=" << path2.getCableLength(state) << endl;
     cout << "Hit ENTER ...";
     //getchar();
 
@@ -253,7 +243,7 @@ int main() {
     const Real finalTime = 10;
     const double startTime = realTime();
     ts.stepTo(finalTime);
-    cout << "DONE with " << finalTime
+    cout << "DONE with " << finalTime 
          << "s simulated in " << realTime()-startTime
          << "s elapsed.\n";
 
@@ -264,4 +254,8 @@ int main() {
         for (unsigned i=0; i < saveStates.size(); ++i)
             viz.report(saveStates[i]);
     }
+
+  } catch (const std::exception& e) {
+    cout << "EXCEPTION: " << e.what() << "\n";
+  }
 }
