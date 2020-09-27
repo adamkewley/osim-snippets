@@ -30,6 +30,12 @@
 #include <thread>
 #include <fstream>
 
+#ifdef NDEBUG
+#define DEBUG_PRINT(fmt, ...)
+#else
+#define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+#endif
+
 using std::string_literals::operator""s;
 using std::chrono_literals::operator""ms;
 
@@ -409,6 +415,7 @@ namespace gl {
     public:
         Shader(GLenum shaderType) :
             handle{glCreateShader(shaderType)} {
+
             assert_no_errors("glCreateShader");
             if (handle == 0) {
                 throw std::runtime_error{"glCreateShader() failed"};
@@ -834,30 +841,25 @@ namespace  osim {
     }
 }
 
-#ifdef __APPLE__
-    static const char* glsl_version = "#version 150";
-#else
-    static const char* glsl_version = "#version 130";
-#endif
-
 namespace ui {
-    sdl::Window init_gl_window(sdl::Context&) {
 #ifdef __APPLE__
-    // GL 3.2 Core + GLSL 150
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#define OSC_GLSL_VERSION "#version 150"
+#define OSC_GL_CTX_FLAGS SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG
+#define OSC_GL_CTX_MAJOR_VERSION 3
+#define OSC_GL_CTX_MINOR_VERSION 2
 #else
-    // GL 3.0 + GLSL 130
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#define OSC_GLSL_VERSION "#version 150"
+#define OSC_GL_CTX_FLAGS 0
+#define OSC_GL_CTX_MAJOR_VERSION 3
+#define OSC_GL_CTX_MINOR_VERSION 0
 #endif
+    sdl::Window init_gl_window(sdl::Context&) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, OSC_GL_CTX_FLAGS);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, OSC_GL_CTX_MAJOR_VERSION);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, OSC_GL_CTX_MINOR_VERSION);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-        //SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 2);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
 
         return sdl::CreateWindoww(
@@ -869,33 +871,39 @@ namespace ui {
             SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     }
 
-    sdl::Renderer init_gl_renderer(sdl::Window& window, sdl::GLContext& gl_ctx) {
-        if (SDL_GL_MakeCurrent(window, gl_ctx) != 0) {
-            throw std::runtime_error{"SDL_GL_MakeCurrent failed: "s  + SDL_GetError()};
-        }
-
-        if (auto err = glewInit(); err != GLEW_OK) {
-            std::stringstream ss;
-            ss << "glewInit() failed: ";
-            ss << glewGetErrorString(err);
-            throw std::runtime_error{ss.str()};
-        }
-
-        return sdl::CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    }
-
     struct State {
         sdl::Context context = sdl::Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
         sdl::Window window = init_gl_window(context);
         sdl::GLContext gl = sdl::GL_CreateContext(window);
-        sdl::Renderer renderer = init_gl_renderer(window, gl);
+
+        State() {
+            // disable VSYNC
+            SDL_GL_SetSwapInterval(0);
+
+            // enable SDL's OpenGL context
+            if (SDL_GL_MakeCurrent(window, gl) != 0) {
+                throw std::runtime_error{"SDL_GL_MakeCurrent failed: "s  + SDL_GetError()};
+            }
+
+            // initialize GLEW, which is what imgui is using under the hood
+            if (auto err = glewInit(); err != GLEW_OK) {
+                std::stringstream ss;
+                ss << "glewInit() failed: ";
+                ss << glewGetErrorString(err);
+                throw std::runtime_error{ss.str()};
+            }
+
+            DEBUG_PRINT("OpenGL info: %s: %s (%s) /w GLSL: %s\n",
+                        glGetString(GL_VENDOR),
+                        glGetString(GL_RENDERER),
+                        glGetString(GL_VERSION),
+                        glGetString(GL_SHADING_LANGUAGE_VERSION));
+        }
     };
 }
 
 namespace examples::imgui {
-    static const char vertex_shader_src[] = R"(
-        #version 410
-
+    static const char vertex_shader_src[] = OSC_GLSL_VERSION R"(
         // A non-texture-mapping Gouraud shader that just adds some basic
         // (diffuse / specular) highlights to the model
 
@@ -951,9 +959,7 @@ namespace examples::imgui {
         }
     )";
 
-    static const char frag_shader_src[] = R"(
-        #version 410
-
+    static const char frag_shader_src[] = OSC_GLSL_VERSION R"(
         // passthrough frag shader: rendering does not use textures and we're
         // using a "good enough" Gouraud shader (rather than a Phong shader,
         // which is per-fragment).
@@ -1496,7 +1502,7 @@ namespace examples::imgui {
         // ImGUI
         auto imgui_ctx = ig::Context{};
         auto imgui_sdl2_ctx = ig::SDL2_Context{s.window, s.gl};
-        auto imgui_ogl3_ctx = ig::OpenGL3_Context{glsl_version};
+        auto imgui_ogl3_ctx = ig::OpenGL3_Context{OSC_GLSL_VERSION};
         ImGui::StyleColorsLight();
         ImGuiIO& io = ImGui::GetIO();
 
@@ -1526,7 +1532,7 @@ namespace examples::imgui {
 
         // initial pan position is the average center of *some of the* geometry
         // in the scene, which is found in an extremely dumb way.
-        if (false) {  // auto-centering
+        if (true) {  // auto-centering
             glm::vec3 middle = {0.0f, 0.0f, 0.0f};
             unsigned n = 0;
             auto update_middle = [&](glm::vec3 const& v) {
@@ -1885,7 +1891,7 @@ namespace examples::imgui {
     }
 }
 
-int oss_show(int argc, char** argv) {
+int oss_show(int, char** argv) {
     auto ui = ui::State{};
 
     // TODO: better handling

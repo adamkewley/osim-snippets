@@ -12,6 +12,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_subdirectory(third_party/glew-2.1.0/build/cmake/ EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/glm-0.9.9.8 EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/SDL2-2.0.12 EXCLUDE_FROM_ALL)
+#add_subdirectory(third_party/freeglut-3.2.1 EXCLUDE_FROM_ALL)
 find_package(OpenGL REQUIRED)
 find_package(OpenSim REQUIRED)
 
@@ -41,12 +42,14 @@ target_include_directories(osim-snippets PUBLIC
     third_party/glew-2.1.0/include
     third_party/imgui-1.78/
     third_party/stb_image/
+#    third_party/freeglut-3.2.1/include
     ${PROJECT_BINARY_DIR}  # so generated files can be #included
 )
 target_link_libraries(osim-snippets
     ${OPENGL_LIBRARIES}
     SDL2
     glew_s
+#    freeglut_static
     osimLepton
     osimCommon
     osimSimulation
