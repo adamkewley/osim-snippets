@@ -1,4 +1,9 @@
-﻿#include <SDL.h>
+﻿#ifdef _MSC_VER
+#pragma warning(disable: 26439) // "This kind of function may not throw. Declare it 'noexcept'
+#pragma warning(disable: 4455) // "This kind of function may not throw. Declare it 'noexcept'
+#endif
+
+#include <SDL.h>
 #undef main
 #include "opensim_wrapper.hpp"
 #include "OsimsnippetsConfig.h"
@@ -30,8 +35,10 @@
 #include <thread>
 #include <fstream>
 
-using std::string_literals::operator""s;
-using std::chrono_literals::operator""ms;
+using std::literals::string_literals::operator""s;
+using std::literals::chrono_literals::operator""ms;
+constexpr float pi_f = static_cast<float>(M_PI);
+constexpr double pi_d = M_PI;
 
 
 // helper type for the visitor #4
@@ -496,7 +503,7 @@ namespace gl {
             glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &log_len);
 
             std::vector<GLchar> errmsg(log_len);
-            glGetProgramInfoLog(prog, errmsg.size(), nullptr, errmsg.data());
+            glGetProgramInfoLog(prog, static_cast<GLsizei>(errmsg.size()), nullptr, errmsg.data());
 
             std::stringstream ss;
             ss << "OpenGL: glLinkProgram() failed: ";
@@ -1019,19 +1026,19 @@ namespace examples::imgui {
         // This one is adapted from:
         //    http://www.songho.ca/opengl/gl_sphere.html#example_cubesphere
 
-        unsigned sectors = 32;
-        unsigned stacks = 16;
+        size_t sectors = 32;
+        size_t stacks = 16;
 
         // polar coords, with [0, 0, -1] pointing towards the screen with polar
         // coords theta = 0, phi = 0. The coordinate [0, 1, 0] is theta = (any)
         // phi = PI/2. The coordinate [1, 0, 0] is theta = PI/2, phi = 0
         std::vector<Mesh_point> points;
 
-        float theta_step = 2.0*M_PI / sectors;
-        float phi_step = M_PI / stacks;
+        float theta_step = 2.0f*pi_f / sectors;
+        float phi_step = pi_f / stacks;
 
-        for (unsigned stack = 0; stack <= stacks; ++stack) {
-            float phi = M_PI/2.0f - stack*phi_step;
+        for (size_t stack = 0; stack <= stacks; ++stack) {
+            float phi = pi_f/2.0f - static_cast<float>(stack)*phi_step;
             float y = sin(phi);
 
             for (unsigned sector = 0; sector <= sectors; ++sector) {
@@ -1049,17 +1056,17 @@ namespace examples::imgui {
         // points must be triangulated
         std::vector<Mesh_point> triangles;
 
-        for (unsigned stack = 0; stack < stacks; ++stack) {
-            unsigned k1 = stack * (sectors + 1);
-            unsigned k2 = k1 + sectors + 1;
+        for (size_t stack = 0; stack < stacks; ++stack) {
+            size_t k1 = stack * (sectors + 1);
+            size_t k2 = k1 + sectors + 1;
 
-            for (unsigned sector = 0; sector < sectors; ++sector, ++k1, ++k2) {
+            for (size_t sector = 0; sector < sectors; ++sector, ++k1, ++k2) {
                 // 2 triangles per sector - excluding the first and last stacks
                 // (which contain one triangle, at the poles)
                 Mesh_point p1 = points.at(k1);
                 Mesh_point p2 = points.at(k2);
-                Mesh_point p1_plus1 = points.at(k1+1);
-                Mesh_point p2_plus1 = points.at(k2+1);
+                Mesh_point p1_plus1 = points.at(k1+1u);
+                Mesh_point p2_plus1 = points.at(k2+1u);
 
                 if (stack != 0) {
                     triangles.push_back(p1);
@@ -1086,7 +1093,7 @@ namespace examples::imgui {
     // - top == [0.0f, 0.0f, -1.0f]
     // - bottom == [0.0f, 0.0f, +1.0f]
     // - (so the height is 2.0f, not 1.0f)
-    std::vector<Mesh_point> unit_cylinder_triangles(unsigned num_sides) {
+    std::vector<Mesh_point> unit_cylinder_triangles(size_t num_sides) {
         // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
         //       would reduce the amount of vertices needed
         if (num_sides < 3) {
@@ -1094,9 +1101,9 @@ namespace examples::imgui {
         }
 
         std::vector<Mesh_point> rv;
-        rv.reserve(2*3*num_sides + 6*num_sides);
+        rv.reserve(2u*3u*num_sides + 6u*num_sides);
 
-        float step_angle = (2*M_PI)/num_sides;
+        float step_angle = (2.0f*pi_f)/num_sides;
         float top_z = -1.0f;
         float bottom_z = +1.0f;
 
@@ -1203,7 +1210,7 @@ namespace examples::imgui {
     //     [0.0f, -1.0f, 0.0f]
     //
     // see simbody-visualizer.cpp::makeCylinder for my source material
-    std::vector<Mesh_point> simbody_cylinder_triangles(unsigned num_sides) {
+    std::vector<Mesh_point> simbody_cylinder_triangles(size_t num_sides) {
         // TODO: this is dumb because a cylinder can be EBO-ed quite easily, which
         //       would reduce the amount of vertices needed
         if (num_sides < 3) {
@@ -1213,7 +1220,7 @@ namespace examples::imgui {
         std::vector<Mesh_point> rv;
         rv.reserve(2*3*num_sides + 6*num_sides);
 
-        float step_angle = (2*M_PI)/num_sides;
+        float step_angle = (2.0f*pi_f)/num_sides;
         float top_y = +1.0f;
         float bottom_y = -1.0f;
 
@@ -1311,14 +1318,14 @@ namespace examples::imgui {
 
     // Basic mesh composed of triangles with normals for all vertices
     struct Triangle_mesh {
-        unsigned num_verts;
+        GLsizei num_verts;
         gl::Array_buffer vbo;
         gl::Vertex_array vao;
 
         Triangle_mesh(gl::Attribute& in_attr,
                       gl::Attribute& normal_attr,
                       std::vector<Mesh_point> const& points) :
-            num_verts(points.size()) {
+            num_verts(static_cast<GLsizei>(points.size())) {
 
             gl::BindVertexArray(vao);
             {
@@ -1721,8 +1728,6 @@ namespace examples::imgui {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
 
-            //glEnableClientState(GL_VERTEX_ARRAY);
-
             gl::UseProgram(gls.program);
 
             // set *invariant* uniforms
@@ -1809,8 +1814,6 @@ namespace examples::imgui {
 
             gl::UseProgram();
 
-            //glDisableClientState(GL_VERTEX_ARRAY);
-
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL2_NewFrame(s.window);
 
@@ -1831,13 +1834,13 @@ namespace examples::imgui {
 
             if (ImGui::Button("Front")) {
                 // assumes models tend to point upwards in Y and forwards in +X
-                theta = M_PI/2.0f;
+                theta = pi_f/2.0f;
                 phi = 0.0f;
             }
             ImGui::SameLine();
             if (ImGui::Button("Back")) {
                 // assumes models tend to point upwards in Y and forwards in +X
-                theta = 3.0f * (M_PI/2.0f);
+                theta = 3.0f * (pi_f/2.0f);
                 phi = 0.0f;
             }
 
@@ -1848,7 +1851,7 @@ namespace examples::imgui {
             if (ImGui::Button("Left")) {
                 // assumes models tend to point upwards in Y and forwards in +X
                 // (so sidewards is theta == 0 or PI)
-                theta = M_PI;
+                theta = pi_f;
                 phi = 0.0f;
             }
             ImGui::SameLine();
@@ -1865,19 +1868,19 @@ namespace examples::imgui {
 
             if (ImGui::Button("Top")) {
                 theta = 0.0f;
-                phi = M_PI/2.0f;
+                phi = pi_f/2.0f;
             }
             ImGui::SameLine();
             if (ImGui::Button("Bottom")) {
                 theta = 0.0f;
-                phi = 3.0f*(M_PI/2.0f);
+                phi = 3.0f * (pi_f/2.0f);
             }
 
             ImGui::NewLine();
 
             ImGui::SliderFloat("radius", &radius, 0.0f, 10.0f);
-            ImGui::SliderFloat("theta", &theta, 0.0f, 2*M_PI);
-            ImGui::SliderFloat("phi", &phi, 0.0f, 2*M_PI);
+            ImGui::SliderFloat("theta", &theta, 0.0f, 2.0f*pi_f);
+            ImGui::SliderFloat("phi", &phi, 0.0f, 2.0f*pi_f);
             ImGui::NewLine();
             ImGui::SliderFloat("pan_x", &pan.x, -100.0f, 100.0f);
             ImGui::SliderFloat("pan_y", &pan.y, -100.0f, 100.0f);
@@ -1914,7 +1917,7 @@ namespace examples::imgui {
             auto now = std::chrono::high_resolution_clock::now();
             auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_render_timepoint);
             if (dt < min_delay_between_frames) {
-                SDL_Delay((min_delay_between_frames - dt).count());
+                SDL_Delay(static_cast<Uint32>((min_delay_between_frames - dt).count()));
             }
 
             // draw
