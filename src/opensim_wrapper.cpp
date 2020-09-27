@@ -20,8 +20,8 @@ namespace {
         }
 
         // necessary to render muscles
-        DefaultGeometry dg{model};
-        dg.generateDecorations(state, geometry);
+        //DefaultGeometry dg{model};
+        //dg.generateDecorations(state, geometry);
     }
 
 
