@@ -860,6 +860,7 @@ namespace ui {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, OSC_GL_CTX_MINOR_VERSION);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 4);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
 
         return sdl::CreateWindoww(
@@ -877,6 +878,8 @@ namespace ui {
         sdl::GLContext gl = sdl::GL_CreateContext(window);
 
         State() {
+            gl::assert_no_errors("State::init");
+
             // disable VSYNC
             SDL_GL_SetSwapInterval(0);
 
@@ -884,6 +887,8 @@ namespace ui {
             if (SDL_GL_MakeCurrent(window, gl) != 0) {
                 throw std::runtime_error{"SDL_GL_MakeCurrent failed: "s  + SDL_GetError()};
             }
+
+            glewExperimental = GL_TRUE;
 
             // initialize GLEW, which is what imgui is using under the hood
             if (auto err = glewInit(); err != GLEW_OK) {
@@ -898,6 +903,8 @@ namespace ui {
                         glGetString(GL_RENDERER),
                         glGetString(GL_VERSION),
                         glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+            gl::assert_no_errors("State::post-init");
         }
     };
 }
@@ -1344,6 +1351,7 @@ namespace examples::imgui {
 
     App_static_glstate initialize() {
         auto program = gl::Program{};
+        gl::assert_no_errors("program");
         auto vertex_shader = gl::Vertex_shader::Compile(vertex_shader_src);
         gl::AttachShader(program, vertex_shader);
         auto frag_shader = gl::Fragment_shader::Compile(frag_shader_src);
@@ -1486,19 +1494,31 @@ namespace examples::imgui {
     }
 
     void show(ui::State& s, std::string file) {
+        gl::assert_no_errors("show::start");
         // OpenGL
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        gl::assert_no_errors("clear color enabled");
         glEnable(GL_DEPTH_TEST);
-        glEnable(GL_ALPHA_TEST);
+        gl::assert_no_errors("depth test enabled");
+
+        gl::assert_no_errors("alpha test enabled");
+
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        gl::assert_no_errors("alpha enabled");
+
         glEnable(GL_MULTISAMPLE);
+
+        gl::assert_no_errors("multisample enabled");
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+        gl::assert_no_errors("show::gl stuff set");
         // ImGUI
         auto imgui_ctx = ig::Context{};
         auto imgui_sdl2_ctx = ig::SDL2_Context{s.window, s.gl};
@@ -1564,6 +1584,8 @@ namespace examples::imgui {
         bool gamma_correction = false;
         auto last_render_timepoint = std::chrono::high_resolution_clock::now();
         auto min_delay_between_frames = 8ms;
+
+        gl::assert_no_errors("before entering main loop");
 
         while (true) {
             auto rot_theta = glm::rotate(glm::identity<glm::mat4>(), -theta, glm::vec3{ 0.0f, 1.0f, 0.0f });
@@ -1689,8 +1711,11 @@ namespace examples::imgui {
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
+            gl::assert_no_errors("polygon mode");
 
-            glEnableClientState(GL_VERTEX_ARRAY);
+            //glEnableClientState(GL_VERTEX_ARRAY);§
+            gl::assert_no_errors("client_state");
+
             gl::UseProgram(gls.program);
 
             // set *invariant* uniforms
@@ -1775,8 +1800,12 @@ namespace examples::imgui {
                 gl::BindVertexArray();
             }
 
+            gl::assert_no_errors("after renders");
+
             gl::UseProgram();
-            glDisableClientState(GL_VERTEX_ARRAY);
+
+            //glDisableClientState(GL_VERTEX_ARRAY);
+
 
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL2_NewFrame(s.window);
@@ -1872,7 +1901,9 @@ namespace examples::imgui {
             }
             ImGui::End();
 
+            gl::assert_no_errors("before imgui render");
             ImGui::Render();
+            gl::assert_no_errors("after imgui render");
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
             // software-throttle the framerate: no need to render at an insane
@@ -1885,7 +1916,9 @@ namespace examples::imgui {
             }
 
             // draw
+            gl::assert_no_errors("before SwapWindow");
             SDL_GL_SwapWindow(s.window);
+            gl::assert_no_errors("after SwapWindow");
             last_render_timepoint = std::chrono::high_resolution_clock::now();
         }
     }

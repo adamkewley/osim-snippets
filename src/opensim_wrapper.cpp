@@ -19,9 +19,9 @@ namespace {
             iter++;
         }
 
-
-        //DefaultGeometry dg{model};
-        //dg.generateDecorations(state, geometry);
+        // necessary to render muscles
+        DefaultGeometry dg{model};
+        dg.generateDecorations(state, geometry);
     }
 
 
