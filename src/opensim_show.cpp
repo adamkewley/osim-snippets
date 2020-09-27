@@ -53,18 +53,16 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 #endif
 
 // macros for quality-of-life checks
-#define OSC_SDL_GL_SetAttribute_CHECK(attr, value) \
-    ({\
-        int rv = SDL_GL_SetAttribute(attr, value);\
-        if (rv != 0) {\
-            throw std::runtime_error{"SDL_GL_SetAttribute failed when setting " #attr " = " #value " : "s + SDL_GetError()};\
-        }\
-    })
-#define OSC_GL_CALL_CHECK(func, ...) \
-    ({\
-        func(__VA_ARGS__);\
-        gl::assert_no_errors(#func);\
-    })
+#define OSC_SDL_GL_SetAttribute_CHECK(attr, value) { \
+        int rv = SDL_GL_SetAttribute((attr), (value)); \
+        if (rv != 0) { \
+            throw std::runtime_error{"SDL_GL_SetAttribute failed when setting " #attr " = " #value " : "s + SDL_GetError()}; \
+        } \
+    }
+#define OSC_GL_CALL_CHECK(func, ...) { \
+        func(__VA_ARGS__); \
+        gl::assert_no_errors(#func); \
+    }
 #ifdef NDEBUG
 #define DEBUG_PRINT(fmt, ...)
 #else
